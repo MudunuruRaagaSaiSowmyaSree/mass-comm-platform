@@ -1,6 +1,7 @@
-# Placeholder for RBAC tests — to be expanded once test fixtures
-# (test client, test database session) are set up in a later day.
+# RBAC is now covered by the full integration test in test_m1_integration.py:
+# - Admin can perform all actions
+# - Campaign Manager can create/transition campaigns
+# - Comms Team is blocked from campaign creation/transitions (403)
+# - Comms Team CAN view campaigns and create templates
 #
-# Manually verified on Day 3:
-# - Admin user can access /auth/admin-only (200)
-# - Non-admin user is rejected from /auth/admin-only (403)
+# See test_m1_integration.py::test_full_m1_flow for the complete flow.
