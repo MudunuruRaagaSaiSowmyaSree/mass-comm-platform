@@ -9,6 +9,7 @@ from app.models.user import User, Role
 from app.schemas.campaign import CampaignCreate, CampaignOut
 from app.core.deps import get_current_user
 from app.core.rbac import require_role
+from app.schemas.campaign_transition import CampaignTransitionRequest
 
 router = APIRouter(prefix="/campaigns", tags=["campaigns"])
 
@@ -73,6 +74,38 @@ async def update_campaign(
     campaign.type = data.type
     campaign.target_filters = data.target_filters
     campaign.template_id = data.template_id
+    await db.commit()
+    await db.refresh(campaign)
+    return campaign
+
+ALLOWED_TRANSITIONS: dict[CampaignStatus, set[CampaignStatus]] = {
+    CampaignStatus.DRAFT: {CampaignStatus.REVIEW},
+    CampaignStatus.REVIEW: {CampaignStatus.SCHEDULED, CampaignStatus.DRAFT},
+    CampaignStatus.SCHEDULED: {CampaignStatus.SENDING},
+    CampaignStatus.SENDING: {CampaignStatus.COMPLETED, CampaignStatus.FAILED},
+    CampaignStatus.COMPLETED: set(),
+    CampaignStatus.FAILED: set(),
+}
+
+@router.post("/{campaign_id}/transition", response_model=CampaignOut)
+async def transition_campaign(
+    campaign_id: uuid.UUID,
+    data: CampaignTransitionRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(Role.ADMIN, Role.CAMPAIGN_MANAGER)),
+):
+    campaign = await db.get(Campaign, campaign_id)
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+
+    allowed_next = ALLOWED_TRANSITIONS.get(campaign.status, set())
+    if data.new_status not in allowed_next:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot move campaign from '{campaign.status.value}' to '{data.new_status.value}'",
+        )
+
+    campaign.status = data.new_status
     await db.commit()
     await db.refresh(campaign)
     return campaign
