@@ -36,6 +36,58 @@ async def list_members(
 ):
     result = await db.execute(select(AudienceMember).limit(limit).offset(offset))
     return result.scalars().all()
+@router.get("/segment", response_model=list[AudienceMemberOut])
+async def segment_audience(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    language: str | None = None,
+    geography: str | None = None,
+    org_id: uuid.UUID | None = None,
+    min_engagement: float | None = None,
+    limit: int = 100,
+    offset: int = 0,
+):
+    stmt = select(AudienceMember)
+
+    if language:
+        stmt = stmt.where(AudienceMember.language == language)
+    if geography:
+        stmt = stmt.where(AudienceMember.geography == geography)
+    if org_id:
+        stmt = stmt.where(AudienceMember.org_id == org_id)
+    if min_engagement is not None:
+        stmt = stmt.where(AudienceMember.engagement_score >= min_engagement)
+
+    stmt = stmt.limit(limit).offset(offset)
+    result = await db.execute(stmt)
+    return result.scalars().all()
+
+
+@router.get("/segment/count")
+async def segment_audience_count(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    language: str | None = None,
+    geography: str | None = None,
+    org_id: uuid.UUID | None = None,
+    min_engagement: float | None = None,
+):
+    from sqlalchemy import func
+
+    stmt = select(func.count()).select_from(AudienceMember)
+
+    if language:
+        stmt = stmt.where(AudienceMember.language == language)
+    if geography:
+        stmt = stmt.where(AudienceMember.geography == geography)
+    if org_id:
+        stmt = stmt.where(AudienceMember.org_id == org_id)
+    if min_engagement is not None:
+        stmt = stmt.where(AudienceMember.engagement_score >= min_engagement)
+
+    result = await db.execute(stmt)
+    count = result.scalar_one()
+    return {"count": count}
 
 @router.get("/{member_id}", response_model=AudienceMemberOut)
 async def get_member(
