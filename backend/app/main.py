@@ -1,7 +1,7 @@
-from fastapi.middleware.cors import CORSMiddleware
 from app import models  # noqa: F401 — ensures all models are registered
 from fastapi import FastAPI
-from app.routers import auth, audience
+from fastapi.middleware.cors import CORSMiddleware
+from app.routers import auth, audience, campaign
 
 app = FastAPI(title="Mass Comm Platform API")
 
@@ -15,6 +15,7 @@ app.add_middleware(
 
 app.include_router(auth.router)
 app.include_router(audience.router)
+app.include_router(campaign.router)
 
 @app.get("/health")
 def health_check():
