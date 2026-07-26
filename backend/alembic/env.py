@@ -29,6 +29,7 @@ from app.models.audience import AudienceMember
 
 from app.models.campaign import Campaign
 
+from app.models.template import Template
 target_metadata = Base.metadata
 
 # other values from the config, defined by the needs of env.py,

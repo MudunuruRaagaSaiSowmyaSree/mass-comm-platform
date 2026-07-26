@@ -29,4 +29,7 @@ class Campaign(Base):
     )
     created_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
     target_filters: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    template_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("templates.id"), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

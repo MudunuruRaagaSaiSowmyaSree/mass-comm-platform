@@ -22,6 +22,7 @@ async def create_campaign(
         title=data.title,
         type=data.type,
         target_filters=data.target_filters,
+        template_id=data.template_id,
         created_by=current_user.id,
     )
     db.add(campaign)
@@ -71,6 +72,7 @@ async def update_campaign(
     campaign.title = data.title
     campaign.type = data.type
     campaign.target_filters = data.target_filters
+    campaign.template_id = data.template_id
     await db.commit()
     await db.refresh(campaign)
     return campaign
