@@ -24,6 +24,8 @@ sys.path.append(os.getcwd())
 
 from app.database import Base
 from app.models.user import User
+from app.models.organization import Organization
+from app.models.audience import AudienceMember
 
 target_metadata = Base.metadata
 
