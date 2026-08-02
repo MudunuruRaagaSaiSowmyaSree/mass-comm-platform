@@ -15,11 +15,36 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 @router.post("/register", response_model=UserOut)
 async def register(data: UserRegister, db: AsyncSession = Depends(get_db)):
+    # Check email uniqueness
     result = await db.execute(select(User).where(User.email == data.email))
     if result.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="Email already registered")
 
-    user = User(email=data.email, hashed_password=hash_password(data.password))
+    # Check admin_id uniqueness (if provided)
+    if data.admin_id:
+        result = await db.execute(select(User).where(User.admin_id == data.admin_id))
+        if result.scalar_one_or_none():
+            raise HTTPException(status_code=400, detail="Admin ID already in use")
+
+    # Check manager_id uniqueness (if provided)
+    if data.manager_id:
+        result = await db.execute(select(User).where(User.manager_id == data.manager_id))
+        if result.scalar_one_or_none():
+            raise HTTPException(status_code=400, detail="Manager ID already in use")
+
+    user = User(
+        name=data.name,
+        email=data.email,
+        phone=data.phone,
+        hashed_password=hash_password(data.password),
+        role=data.role,
+        admin_id=data.admin_id,
+        department=data.department,
+        access_level=data.access_level,
+        manager_id=data.manager_id,
+        assigned_region=data.assigned_region,
+        shift_timing=data.shift_timing,
+    )
     db.add(user)
     await db.commit()
     await db.refresh(user)
