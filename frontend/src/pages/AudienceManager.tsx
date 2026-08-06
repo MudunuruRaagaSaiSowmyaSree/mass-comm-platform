@@ -9,7 +9,11 @@ interface AudienceMember {
   occupation: string;
 }
 
-export default function AudienceManager() {
+interface AudienceManagerProps {
+  currentUser?: string;
+}
+
+export default function AudienceManager({ currentUser = 'Raaga Sai' }: AudienceManagerProps) {
   const [members, setMembers] = useState<AudienceMember[]>([]);
   const [name, setName] = useState('');
   const [language, setLanguage] = useState('');
@@ -74,11 +78,13 @@ export default function AudienceManager() {
     <div className="min-h-screen bg-slate-50 text-slate-800 p-8 font-sans">
       <div className="max-w-7xl mx-auto space-y-12">
         
-        {/* Colorful Header Section */}
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 bg-white p-8 rounded-3xl shadow-xl border-l-8 border-indigo-600 transition-all duration-300">
+        {/* Colorful Header Section with User Welcome */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 bg-white p-8 rounded-3xl shadow-xl border-l-8 border-indigo-600">
           <div>
             <h1 className="text-4xl font-extrabold text-slate-950 tracking-tight">Audience Manager</h1>
-            <p className="text-slate-600 mt-2 max-w-xl text-base">Segment your audience for targeted, multilingual mass communication workflows.</p>
+            <p className="text-slate-600 mt-2 max-w-xl text-base">
+              Welcome back, <span className="font-semibold text-indigo-600">{currentUser}</span>! Segment your audience for targeted, multilingual mass communication workflows.
+            </p>
           </div>
           <div className="flex items-center gap-3">
             <span className="px-5 py-2.5 bg-indigo-50 text-indigo-700 font-bold text-sm rounded-full border border-indigo-100 shadow-inner">
@@ -128,7 +134,7 @@ export default function AudienceManager() {
           {/* Table View & Blue Filter Section */}
           <div className="lg:col-span-3 bg-white p-8 rounded-3xl shadow-xl border border-blue-100 space-y-6">
             
-            {/* Filter Bar with Blue Styling */}
+            {/* Filter Bar */}
             <div className="flex flex-col sm:flex-row gap-4 items-center justify-between pb-6 border-b border-blue-50">
               <h2 className="text-2xl font-bold text-slate-950">Segments</h2>
               <div className="flex gap-3 w-full sm:w-auto">
@@ -149,7 +155,7 @@ export default function AudienceManager() {
               </div>
             </div>
 
-            {/* Audience Table with Subtle Colors */}
+            {/* Audience Table */}
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
                 <thead>
