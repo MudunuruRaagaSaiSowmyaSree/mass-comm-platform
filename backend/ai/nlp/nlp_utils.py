@@ -5,7 +5,11 @@ from indicnlp.normalize.indic_normalize import IndicNormalizerFactory
 class IndicProcessor:
     def __init__(self):
         # Supported languages for your project
-        self.supported_langs = {'hi', 'ta', 'te', 'kn', 'bn'}
+        self.supported_langs = {
+            "hi",
+            "te",
+            "bn",
+        }
         self.factory = IndicNormalizerFactory()
 
     def clean_text(self, text: str, lang_code: str) -> str:

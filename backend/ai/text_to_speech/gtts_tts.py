@@ -5,8 +5,12 @@ from gtts import gTTS
 OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "generated_audio")
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-GTTS_LANG_MAP = {"en": "en", "hi": "hi", "te": "te", "bn": "bn"}
-
+GTTS_LANG_MAP = {
+    "en": "en",
+    "hi": "hi",
+    "te": "te",
+    "bn": "bn"
+}
 
 def synthesize(text: str, language: str, session_id: str) -> str:
     """Generate speech audio and return just the filename (not full path)."""

@@ -4,46 +4,196 @@ import tempfile
 
 from fastapi import APIRouter, UploadFile, File, Form
 
-from ai.speech_to_text.whisper_stt import transcribe, ALLOWED_LANGUAGES
+from ai.speech_to_text.google_stt import (
+    transcribe,
+    ALLOWED_LANGUAGES
+)
+
 from ai.nlp.nlp_utils import IndicProcessor
 from ai.session.session_manager import SessionManager
 from ai.text_to_speech.gtts_tts import synthesize
 
-router = APIRouter(prefix="/api/v1", tags=["voice"])
+from app.rag.pipeline import run_rag_pipeline
+
+
+router = APIRouter(
+    prefix="/api/v1",
+    tags=["voice"]
+)
+
+
+# ---------------------------------------------------------
+# Initialize services
+# ---------------------------------------------------------
 
 indic = IndicProcessor()
 sessions = SessionManager()
 
 
+# ---------------------------------------------------------
+# Voice processing endpoint
+# ---------------------------------------------------------
+
 @router.post("/voice-process")
 async def voice_process(
     session_id: str = Form(...),
     language: str = Form("auto"),
-    file: UploadFile = File(...),
+    file: UploadFile = File(...)
 ):
-    suffix = os.path.splitext(file.filename or "audio.webm")[1] or ".webm"
-    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-        shutil.copyfileobj(file.file, tmp)
-        tmp_path = tmp.name
 
-    try:
-        lang_hint = language if language in ALLOWED_LANGUAGES else None
-        raw_text, detected_lang = transcribe(tmp_path, language=lang_hint)
-    finally:
-        os.remove(tmp_path)
+    # -----------------------------------------------------
+    # Save uploaded audio temporarily
+    # -----------------------------------------------------
 
-    processed = indic.process(raw_text, detected_lang)
-    cleaned_text = processed["normalized_text"]
-    tokens = processed["tokens"]
-
-    response_text = (
-        f"You said: {cleaned_text}" if cleaned_text else "Sorry, I couldn't hear that clearly."
+    suffix = (
+        os.path.splitext(file.filename or "audio.webm")[1]
+        or ".webm"
     )
 
-    sessions.add_interaction(session_id, cleaned_text, response_text, detected_lang)
-    history_length = len(sessions.get_session(session_id)["history"])
+    with tempfile.NamedTemporaryFile(
+        delete=False,
+        suffix=suffix
+    ) as tmp:
 
-    audio_filename = synthesize(response_text, detected_lang, session_id)
+        shutil.copyfileobj(file.file, tmp)
+
+        tmp_path = tmp.name
+
+
+    # -----------------------------------------------------
+    # Speech to Text
+    # -----------------------------------------------------
+
+    try:
+
+        lang_hint = (
+            language
+            if language in ALLOWED_LANGUAGES
+            else None
+        )
+
+        raw_text, detected_lang = transcribe(
+            tmp_path,
+            language=lang_hint
+        )
+
+    finally:
+
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+
+
+    # -----------------------------------------------------
+    # Process / normalize text
+    # -----------------------------------------------------
+
+    processed = indic.process(
+        raw_text,
+        detected_lang
+    )
+
+    cleaned_text = processed["normalized_text"]
+
+    tokens = processed["tokens"]
+
+
+    # -----------------------------------------------------
+    # If speech could not be understood
+    # -----------------------------------------------------
+
+    if not cleaned_text:
+
+        response_text = (
+            "Sorry, I couldn't hear that clearly."
+        )
+
+        # Save unsuccessful interaction too
+        await sessions.add_interaction(
+            session_id=session_id,
+            user_text="",
+            bot_text=response_text,
+            detected_lang=detected_lang
+        )
+
+        history = await sessions.get_history(
+            session_id
+        )
+
+        audio_filename = synthesize(
+            response_text,
+            detected_lang,
+            session_id
+        )
+
+        return {
+            "session_id": session_id,
+            "detected_language": detected_lang,
+            "raw_transcribed_text": raw_text,
+            "cleaned_text": cleaned_text,
+            "tokens": tokens,
+            "response_text": response_text,
+            "audio_response_url": f"/audio/{audio_filename}",
+            "conversation_history_length": len(history)
+        }
+
+
+    # -----------------------------------------------------
+    # Load previous conversation from database
+    # -----------------------------------------------------
+
+    history = await sessions.get_history(
+        session_id
+    )
+
+
+    # -----------------------------------------------------
+    # RAG retrieval
+    # -----------------------------------------------------
+
+    rag_result = run_rag_pipeline(
+        question=cleaned_text,
+        language=detected_lang,
+        history=history,
+    )
+
+    response_text = rag_result["answer"]
+
+
+    # -----------------------------------------------------
+    # Save conversation to database
+    # -----------------------------------------------------
+
+    await sessions.add_interaction(
+        session_id=session_id,
+        user_text=cleaned_text,
+        bot_text=response_text,
+        detected_lang=detected_lang
+    )
+
+
+    # -----------------------------------------------------
+    # Generate voice response
+    # -----------------------------------------------------
+
+    audio_filename = synthesize(
+        response_text,
+        detected_lang,
+        session_id
+    )
+
+
+    # -----------------------------------------------------
+    # Get updated history length
+    # -----------------------------------------------------
+
+    updated_history = await sessions.get_history(
+        session_id
+    )
+
+
+    # -----------------------------------------------------
+    # Return response
+    # -----------------------------------------------------
 
     return {
         "session_id": session_id,
@@ -53,5 +203,5 @@ async def voice_process(
         "tokens": tokens,
         "response_text": response_text,
         "audio_response_url": f"/audio/{audio_filename}",
-        "conversation_history_length": history_length,
+        "conversation_history_length": len(updated_history)
     }

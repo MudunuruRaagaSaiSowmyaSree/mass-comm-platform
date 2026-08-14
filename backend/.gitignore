@@ -7,3 +7,5 @@ venv/
 *.wav
 temp_*
 .vscode/
+
+*.db

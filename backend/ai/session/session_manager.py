@@ -1,22 +1,56 @@
-import time
+from sqlalchemy import select
+
+from app.database import AsyncSessionLocal
+from app.models.chat_history import ChatHistory
+
 
 class SessionManager:
-    def __init__(self):
-        self.sessions = {}
 
-    def get_session(self, session_id: str, default_lang: str = "hi"):
-        if session_id not in self.sessions:
-            self.sessions[session_id] = {
-                "preferred_language": default_lang,
-                "history": [],
-                "created_at": time.time()
-            }
-        return self.sessions[session_id]
+    async def get_history(self, session_id: str) -> list:
 
-    def add_interaction(self, session_id: str, user_text: str, bot_text: str, detected_lang: str):
-        session = self.get_session(session_id)
-        session["preferred_language"] = detected_lang
-        session["history"].append({
-            "user": user_text,
-            "bot": bot_text
-        })
+        async with AsyncSessionLocal() as db:
+
+            result = await db.execute(
+                select(ChatHistory)
+                .where(
+                    ChatHistory.session_id == session_id
+                )
+                .order_by(
+                    ChatHistory.created_at.asc()
+                )
+            )
+
+            records = result.scalars().all()
+
+            history = []
+
+            for record in records:
+                history.append({
+                    "user": record.message,
+                    "bot": record.response,
+                    "language": record.language,
+                })
+
+            return history
+
+    async def add_interaction(
+        self,
+        session_id: str,
+        user_text: str,
+        bot_text: str,
+        detected_lang: str
+    ):
+
+        async with AsyncSessionLocal() as db:
+
+            chat = ChatHistory(
+                session_id=session_id,
+                message=user_text,
+                response=bot_text,
+                language=detected_lang,
+                user_id=None,
+            )
+
+            db.add(chat)
+
+            await db.commit()

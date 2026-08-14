@@ -1,13 +1,16 @@
 import uuid
 from datetime import datetime
 from pydantic import BaseModel
+
 from app.models.campaign import CampaignType
+
 
 class TemplateCreate(BaseModel):
     name: str
     campaign_type: CampaignType
     body: str
     language: str = "en"
+
 
 class TemplateOut(BaseModel):
     id: uuid.UUID
