@@ -1,0 +1,37 @@
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Python virtual environment
+venv/
+.venv/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+
+# IDE
+.vscode/
+.idea/
+
+# Generated audio / test audio
+generated_audio/
+*.wav
+*.WAV
+
+# Generated vector database
+app/rag/vector_db/
+
+# Local databases
+*.sqlite
+*.sqlite3
+
+# OS
+.DS_Store
+Thumbs.db
+*.db
+
+# Local database files
+*.db
