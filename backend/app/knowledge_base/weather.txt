@@ -1,5 +1,0 @@
-Weather information includes temperature, humidity and rainfall.
-
-Weather forecast helps farmers plan irrigation.
-
-Heavy rainfall warnings should be followed carefully.
