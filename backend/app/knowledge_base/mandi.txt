@@ -1,0 +1,17 @@
+﻿Mandi prices refer to the selling prices of crops in agricultural markets.
+
+Prices can change every day depending on market conditions.
+
+Sample mandi prices:
+
+Rice: ₹2,200 per quintal
+Wheat: ₹2,450 per quintal
+Cotton: ₹7,100 per quintal
+Maize: ₹2,100 per quintal
+Tomato: ₹1,800 per quintal
+Potato: ₹1,600 per quintal
+Onion: ₹2,000 per quintal
+
+Farmers should check the latest mandi prices before selling their crops.
+
+These prices are dummy/sample data for demonstration purposes and should not be treated as live market prices.
