@@ -6,9 +6,13 @@ from app.models.template import Template
 from app.models.chat_history import ChatHistory
 from app.models.campaign_recipient import CampaignRecipient
 from app.models.message_delivery import MessageDelivery
-from app.models.chat_history import ChatHistory
 from app.models.campaign_schedule import (
     CampaignSchedule,
     ScheduleFrequency,
 )
 from app.models.feedback import Feedback
+from app.models.channel_config import ChannelConfig
+from app.models.engagement_event import (
+    EngagementEvent,
+    EngagementType,
+)

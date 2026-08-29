@@ -153,6 +153,9 @@ async def deliver_campaign(
     - Stores the actual provider message ID.
     - Never stores the complete ChannelDeliveryResult
       object inside provider_message_id.
+    - Prevents duplicate successful deliveries.
+    - Historical FAILED deliveries do not prevent retry.
+    - A FAILED campaign can be retried.
     """
 
     # ========================================================
@@ -172,6 +175,7 @@ async def deliver_campaign(
         CampaignStatus.READY,
         CampaignStatus.SCHEDULED,
         CampaignStatus.COMPLETED,
+        CampaignStatus.FAILED,
     }
 
     if campaign.status not in allowed_statuses:
@@ -268,6 +272,8 @@ async def deliver_campaign(
 
     campaign.started_at = datetime.utcnow()
 
+    campaign.completed_at = None
+
     await db.commit()
 
     # ========================================================
@@ -287,7 +293,7 @@ async def deliver_campaign(
     for campaign_recipient in recipients:
 
         # ----------------------------------------------------
-        # Load audience member
+        # LOAD AUDIENCE MEMBER
         # ----------------------------------------------------
 
         audience_query_result = await db.execute(
@@ -302,7 +308,7 @@ async def deliver_campaign(
         )
 
         # ----------------------------------------------------
-        # Audience member missing
+        # AUDIENCE MEMBER MISSING
         # ----------------------------------------------------
 
         if audience_member is None:
@@ -330,18 +336,97 @@ async def deliver_campaign(
 
         for channel in normalized_channels:
 
+            # ------------------------------------------------
+            # GET RECIPIENT DESTINATION
+            # ------------------------------------------------
+
             recipient_value = get_recipient_value(
                 audience_member=audience_member,
                 channel=channel,
             )
 
+            # =================================================
+            # PREVENT DUPLICATE SUCCESSFUL DELIVERY
+            #
+            # Existing SENT/DELIVERED records mean this
+            # recipient/channel has already succeeded.
+            #
+            # FAILED records are ignored so the campaign
+            # can retry them.
+            # =================================================
+
+            existing_delivery_result = await db.execute(
+                select(MessageDelivery)
+                .where(
+                    MessageDelivery.recipient_id
+                    == campaign_recipient.id,
+                    MessageDelivery.channel
+                    == channel,
+                    MessageDelivery.status.in_(
+                        [
+                            RecipientStatus.SENT,
+                            RecipientStatus.DELIVERED,
+                        ]
+                    ),
+                )
+                .order_by(
+                    MessageDelivery.sent_at.desc()
+                )
+                .limit(1)
+            )
+
+            existing_delivery = (
+                existing_delivery_result.scalar_one_or_none()
+            )
+
+            # ------------------------------------------------
+            # EXISTING SUCCESSFUL DELIVERY
+            # ------------------------------------------------
+
+            if existing_delivery is not None:
+
+                successful_deliveries += 1
+                recipient_success = True
+
+                delivery_results.append(
+                    {
+                        "recipient_id": str(
+                            campaign_recipient.id
+                        ),
+                        "audience_member_id": str(
+                            audience_member.id
+                        ),
+                        "channel": channel,
+                        "success": True,
+                        "provider": (
+                            existing_delivery.provider
+                        ),
+                        "message_id": (
+                            existing_delivery.provider_message_id
+                        ),
+                        "error": None,
+                        "duplicate_prevented": True,
+                    }
+                )
+
+                continue
+
+            # =================================================
+            # REAL NEW DELIVERY ATTEMPT
+            # =================================================
+
             total_attempts += 1
 
             # ------------------------------------------------
-            # No destination available
+            # NO DESTINATION AVAILABLE
             # ------------------------------------------------
 
             if not recipient_value:
+
+                error_message = (
+                    "No recipient contact available "
+                    f"for '{channel}'."
+                )
 
                 delivery = MessageDelivery(
                     recipient_id=campaign_recipient.id,
@@ -352,10 +437,7 @@ async def deliver_campaign(
                     sent_at=None,
                     delivered_at=None,
                     failed_at=datetime.utcnow(),
-                    error_message=(
-                        "No recipient contact available "
-                        f"for '{channel}'."
-                    ),
+                    error_message=error_message,
                 )
 
                 db.add(delivery)
@@ -375,17 +457,15 @@ async def deliver_campaign(
                         "success": False,
                         "provider": None,
                         "message_id": None,
-                        "error": (
-                            "No recipient contact available "
-                            f"for '{channel}'."
-                        ),
+                        "error": error_message,
+                        "duplicate_prevented": False,
                     }
                 )
 
                 continue
 
             # ------------------------------------------------
-            # Get channel configuration
+            # CHANNEL CONFIGURATION
             # ------------------------------------------------
 
             channel_config = channel_configs.get(
@@ -394,7 +474,7 @@ async def deliver_campaign(
             )
 
             # ------------------------------------------------
-            # Provider
+            # CONFIGURED PROVIDER
             # ------------------------------------------------
 
             configured_provider = (
@@ -404,13 +484,14 @@ async def deliver_campaign(
             )
 
             if configured_provider:
+
                 configured_provider = str(
                     configured_provider
                 ).strip().lower()
 
-            # ------------------------------------------------
-            # Send message
-            # ------------------------------------------------
+            # =================================================
+            # SEND MESSAGE
+            # =================================================
 
             try:
 
@@ -459,14 +540,15 @@ async def deliver_campaign(
                         "provider": configured_provider,
                         "message_id": None,
                         "error": error_message,
+                        "duplicate_prevented": False,
                     }
                 )
 
                 continue
 
-            # ------------------------------------------------
-            # Validate dispatcher result
-            # ------------------------------------------------
+            # =================================================
+            # VALIDATE DISPATCHER RESULT
+            # =================================================
 
             if not channel_results:
 
@@ -505,22 +587,17 @@ async def deliver_campaign(
                         "provider": configured_provider,
                         "message_id": None,
                         "error": error_message,
+                        "duplicate_prevented": False,
                     }
                 )
 
                 continue
 
-            channel_result = channel_results[0]
+            # =================================================
+            # EXTRACT DISPATCHER RESULT
+            # =================================================
 
-            # =================================================
-            # IMPORTANT:
-            #
-            # Explicitly extract fields from
-            # ChannelDeliveryResult.
-            #
-            # Do NOT put channel_result itself into
-            # provider_message_id.
-            # =================================================
+            channel_result = channel_results[0]
 
             result_success = bool(
                 channel_result.success
@@ -539,9 +616,9 @@ async def deliver_campaign(
                 channel_result.error
             )
 
-            # ------------------------------------------------
-            # Successful delivery
-            # ------------------------------------------------
+            # =================================================
+            # DETERMINE DELIVERY STATE
+            # =================================================
 
             if result_success:
 
@@ -553,10 +630,6 @@ async def deliver_campaign(
                 sent_at = datetime.utcnow()
                 failed_at = None
 
-            # ------------------------------------------------
-            # Failed delivery
-            # ------------------------------------------------
-
             else:
 
                 status = RecipientStatus.FAILED
@@ -567,50 +640,6 @@ async def deliver_campaign(
                 sent_at = None
                 failed_at = datetime.utcnow()
 
-                        # =================================================
-            # PREVENT DUPLICATE SUCCESSFUL DELIVERY
-            # =================================================
-
-            existing_delivery_result = await db.execute(
-                select(MessageDelivery)
-                .where(
-                    MessageDelivery.recipient_id
-                    == campaign_recipient.id,
-                    MessageDelivery.channel
-                    == channel,
-                    MessageDelivery.status
-                    == RecipientStatus.SENT,
-                )
-                .limit(1)
-            )
-
-            existing_delivery = (
-                existing_delivery_result.scalar_one_or_none()
-            )
-
-            if existing_delivery is not None:
-                recipient_success = True
-
-                delivery_results.append(
-                    {
-                        "recipient_id": str(
-                            campaign_recipient.id
-                        ),
-                        "audience_member_id": str(
-                            audience_member.id
-                        ),
-                        "channel": channel,
-                        "success": True,
-                        "provider": existing_delivery.provider,
-                        "message_id": (
-                            existing_delivery.provider_message_id
-                        ),
-                        "error": None,
-                    }
-                )
-
-                continue
-
             # =================================================
             # CREATE MESSAGE DELIVERY
             # =================================================
@@ -619,20 +648,12 @@ async def deliver_campaign(
                 recipient_id=campaign_recipient.id,
                 channel=channel,
                 status=status,
-
-                # IMPORTANT:
-                # Store the provider string only.
                 provider=result_provider,
-
-                # IMPORTANT:
-                # Store only the provider's message ID.
-                # Never store channel_result itself.
                 provider_message_id=(
                     str(result_message_id)
                     if result_message_id
                     else None
                 ),
-
                 sent_at=sent_at,
                 delivered_at=None,
                 failed_at=failed_at,
@@ -662,6 +683,7 @@ async def deliver_campaign(
                         else None
                     ),
                     "error": result_error,
+                    "duplicate_prevented": False,
                 }
             )
 
@@ -723,24 +745,38 @@ async def deliver_campaign(
         "success": (
             successful_deliveries > 0
         ),
+
         "campaign_id": str(
             campaign.id
         ),
+
         "campaign_status": (
             campaign.status.value
         ),
+
         "total_recipients": len(
             recipients
         ),
+
+        # Primary API key expected by callers/tests.
+        "total_attempts": (
+            total_attempts
+        ),
+
+        # Backward-compatible descriptive key.
         "total_delivery_attempts": (
             total_attempts
         ),
+
         "successful_deliveries": (
             successful_deliveries
         ),
+
         "failed_deliveries": (
             failed_deliveries
         ),
+
         "channels": normalized_channels,
+
         "deliveries": delivery_results,
     }

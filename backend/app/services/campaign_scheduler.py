@@ -29,7 +29,6 @@ continue using the existing channel dispatcher.
 The existing WhatsApp implementation is therefore preserved.
 """
 
-
 import asyncio
 from datetime import datetime, timedelta
 from uuid import UUID
@@ -62,7 +61,6 @@ from app.services.campaign_queue import (
 # CONFIGURATION
 # ============================================================
 
-
 SCHEDULER_INTERVAL_SECONDS = 10
 
 MAX_CAMPAIGNS_PER_SCAN = 100
@@ -74,7 +72,6 @@ MAX_CONCURRENT_DELIVERIES = 3
 # RUNNING STATE
 # ============================================================
 
-
 _scheduler_task: asyncio.Task | None = None
 
 _scheduler_stop_event: asyncio.Event | None = None
@@ -85,7 +82,6 @@ _worker_tasks: list[asyncio.Task] = []
 # ============================================================
 # NEXT RUN CALCULATION
 # ============================================================
-
 
 def calculate_next_run(
     schedule: CampaignSchedule,
@@ -154,11 +150,6 @@ def calculate_next_run(
 
     if frequency == ScheduleFrequency.MONTHLY:
 
-        # Keep this dependency-free.
-        #
-        # Calculate approximately one month using the
-        # calendar-day length of the current month.
-
         year = current_run.year
 
         month = current_run.month
@@ -177,7 +168,10 @@ def calculate_next_run(
             total_months % 12
         ) + 1
 
-        # Days in target month.
+        # ----------------------------------------------------
+        # Find first day of the month after target month.
+        # ----------------------------------------------------
+
         if next_month == 12:
 
             next_month_start = datetime(
@@ -194,16 +188,32 @@ def calculate_next_run(
                 1,
             )
 
+        # ----------------------------------------------------
+        # Find first day of target month.
+        # ----------------------------------------------------
+
         current_month_start = datetime(
             next_year,
             next_month,
             1,
         )
 
+        # ----------------------------------------------------
+        # Number of days in target month.
+        # ----------------------------------------------------
+
         days_in_target_month = (
             next_month_start
             - current_month_start
         ).days
+
+        # ----------------------------------------------------
+        # Protect against invalid dates such as:
+        #
+        # January 31 -> February
+        #
+        # February does not have 31 days.
+        # ----------------------------------------------------
 
         safe_day = min(
             day,
@@ -222,7 +232,6 @@ def calculate_next_run(
 # ============================================================
 # CHECK OCCURRENCE LIMIT
 # ============================================================
-
 
 def has_reached_occurrence_limit(
     schedule: CampaignSchedule,
@@ -245,7 +254,6 @@ def has_reached_occurrence_limit(
 # ============================================================
 # GET DATABASE SESSION
 # ============================================================
-
 
 async def get_background_db():
     """
@@ -293,7 +301,6 @@ async def close_background_db(
 # ============================================================
 # FIND DUE SCHEDULES
 # ============================================================
-
 
 async def scan_due_campaigns() -> int:
     """
@@ -389,7 +396,6 @@ async def scan_due_campaigns() -> int:
 # LOAD SCHEDULE
 # ============================================================
 
-
 async def load_schedule_for_campaign(
     db,
     campaign_id: UUID,
@@ -411,11 +417,11 @@ async def load_schedule_for_campaign(
 # UPDATE SCHEDULE AFTER DELIVERY
 # ============================================================
 
-
 async def update_schedule_after_delivery(
     db,
     schedule: CampaignSchedule,
     delivery_success: bool,
+    scheduled_run_at: datetime | None = None,
 ) -> None:
     """
     Update schedule after a campaign execution.
@@ -428,8 +434,17 @@ async def update_schedule_after_delivery(
 
         Calculate next_run_at and keep ACTIVE.
 
-    If delivery fails, the schedule remains active for a
-    recurring campaign so the next occurrence can still run.
+    IMPORTANT:
+
+        For recurring schedules, the next execution is
+        calculated from the previous scheduled execution
+        time rather than the actual worker execution time.
+
+        This prevents scheduler/queue delays from gradually
+        shifting the recurring campaign schedule.
+
+    If delivery fails, the recurring schedule remains active
+    so the next occurrence can still run.
     """
 
     now = datetime.utcnow()
@@ -497,9 +512,37 @@ async def update_schedule_after_delivery(
     # RECURRING
     # --------------------------------------------------------
 
+    # IMPORTANT:
+    #
+    # Use the previous scheduled time as the anchor.
+    #
+    # Example:
+    #
+    # next_run_at = 10:00
+    # worker actually starts at 10:00:07
+    #
+    # The next run should be:
+    #
+    # 11:00
+    #
+    # NOT:
+    #
+    # 11:00:07
+    #
+    # This prevents schedule drift.
+    #
+    # If scheduled_run_at was not supplied, fall back to the
+    # schedule's existing next_run_at and finally to `now`.
+
+    calculation_base = (
+        scheduled_run_at
+        or schedule.next_run_at
+        or now
+    )
+
     next_run = calculate_next_run(
         schedule=schedule,
-        current_run=now,
+        current_run=calculation_base,
     )
 
     if next_run is None:
@@ -526,7 +569,6 @@ async def update_schedule_after_delivery(
 # ============================================================
 # PROCESS ONE CAMPAIGN
 # ============================================================
-
 
 async def process_campaign(
     campaign_id: str,
@@ -607,6 +649,15 @@ async def process_campaign(
             return
 
         # ----------------------------------------------------
+        # Capture the scheduled execution time BEFORE
+        # delivery changes or database operations occur.
+        # ----------------------------------------------------
+
+        scheduled_run_at = (
+            schedule.next_run_at
+        )
+
+        # ----------------------------------------------------
         # Prevent invalid campaign state
         # ----------------------------------------------------
 
@@ -662,8 +713,9 @@ async def process_campaign(
 
             delivery_success = False
 
-            # Refresh schedule because the delivery function
-            # may have committed the session before failing.
+            # Refresh session state because the delivery
+            # function may have committed the session before
+            # failing.
 
             try:
 
@@ -696,6 +748,7 @@ async def process_campaign(
             db=db,
             schedule=schedule,
             delivery_success=delivery_success,
+            scheduled_run_at=scheduled_run_at,
         )
 
         # ----------------------------------------------------
@@ -723,6 +776,8 @@ async def process_campaign(
             campaign_id,
             "success=",
             delivery_success,
+            "scheduled_run=",
+            scheduled_run_at,
             "next_run=",
             schedule.next_run_at,
         )
@@ -747,7 +802,6 @@ async def process_campaign(
 # ============================================================
 # QUEUE WORKER
 # ============================================================
-
 
 async def campaign_queue_worker(
     worker_number: int,
@@ -810,7 +864,6 @@ async def campaign_queue_worker(
 # SCHEDULER LOOP
 # ============================================================
 
-
 async def scheduler_loop() -> None:
     """
     Main scheduler loop.
@@ -856,7 +909,6 @@ async def scheduler_loop() -> None:
 # ============================================================
 # START SCHEDULER
 # ============================================================
-
 
 async def start_campaign_scheduler() -> None:
     """
@@ -921,7 +973,6 @@ async def start_campaign_scheduler() -> None:
 # ============================================================
 # STOP SCHEDULER
 # ============================================================
-
 
 async def stop_campaign_scheduler() -> None:
     """

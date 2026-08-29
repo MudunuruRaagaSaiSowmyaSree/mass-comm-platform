@@ -1,14 +1,28 @@
-import { useState } from "react";
-import { Icon, icons } from "./Icon";
+import {
+  Icon,
+  icons,
+} from "./Icon";
+
+
+/* ============================================================
+   USER ROLES
+   ============================================================ */
 
 export type UserRole =
   | "admin"
   | "campaign_manager"
   | "comms_team";
 
+
+/* ============================================================
+   APP VIEWS
+   ============================================================ */
+
 export type AppView =
   | "dashboard"
+  | "userManagement"
   | "campaigns"
+  | "teamMembers"
   | "aiStudio"
   | "pipeline"
   | "templates"
@@ -22,18 +36,44 @@ export type AppView =
   | "reports"
   | "settings";
 
-type NavItem = {
-  key: AppView;
-  label: string;
-  icon: string;
-  roles: UserRole[];
-};
 
-/*
- * ============================================================
- * ROLE GROUPS
- * ============================================================
- */
+/* ============================================================
+   SIDEBAR PROPS
+   ============================================================ */
+
+interface SidebarProps {
+  active: AppView;
+
+  onNavigate: (
+    view: AppView
+  ) => void;
+
+  userEmail: string;
+
+  userRole: UserRole;
+
+  onLogout: () => void;
+}
+
+
+/* ============================================================
+   MENU ITEM
+   ============================================================ */
+
+interface MenuItem {
+  key: AppView;
+
+  label: string;
+
+  icon: string;
+
+  roles: UserRole[];
+}
+
+
+/* ============================================================
+   ROLE GROUPS
+   ============================================================ */
 
 const ALL_ROLES: UserRole[] = [
   "admin",
@@ -41,33 +81,46 @@ const ALL_ROLES: UserRole[] = [
   "comms_team",
 ];
 
-const CAMPAIGN_ROLES: UserRole[] = [
-  "admin",
-  "campaign_manager",
-  "comms_team",
-];
-
-const MANAGEMENT_ROLES: UserRole[] = [
-  "admin",
-  "campaign_manager",
-];
 
 const ADMIN_ONLY: UserRole[] = [
   "admin",
 ];
 
-const CAMPAIGN_WORKFLOW_ROLES: UserRole[] = [
+
+const ADMIN_MANAGER: UserRole[] = [
   "admin",
   "campaign_manager",
 ];
 
-/*
- * ============================================================
- * NAVIGATION ITEMS
- * ============================================================
- */
 
-const NAV_ITEMS: NavItem[] = [
+const ADMIN_MANAGER_PERSON: UserRole[] = [
+  "admin",
+  "campaign_manager",
+  "comms_team",
+];
+
+
+const MANAGER_ONLY: UserRole[] = [
+  "campaign_manager",
+];
+
+
+const MANAGER_PERSON: UserRole[] = [
+  "campaign_manager",
+  "comms_team",
+];
+
+
+/* ============================================================
+   NAVIGATION
+   ============================================================ */
+
+const MENU_ITEMS: MenuItem[] = [
+
+  /* ----------------------------------------------------------
+     DASHBOARD
+     ---------------------------------------------------------- */
+
   {
     key: "dashboard",
     label: "Dashboard",
@@ -75,68 +128,163 @@ const NAV_ITEMS: NavItem[] = [
     roles: ALL_ROLES,
   },
 
+
+  /* ----------------------------------------------------------
+     ADMIN - USER MANAGEMENT
+     ---------------------------------------------------------- */
+
+  {
+    key: "userManagement",
+    label: "User Management",
+    icon: icons.users,
+    roles: ADMIN_ONLY,
+  },
+
+
+  /* ----------------------------------------------------------
+     CAMPAIGNS
+     ---------------------------------------------------------- */
+
   {
     key: "campaigns",
     label: "Campaigns",
     icon: icons.megaphone,
-    roles: CAMPAIGN_ROLES,
+    roles: ADMIN_MANAGER_PERSON,
   },
+
+
+  /* ----------------------------------------------------------
+     MANAGER - TEAM MEMBERS
+     ---------------------------------------------------------- */
+
+  {
+    key: "teamMembers",
+    label: "Team Members",
+    icon: icons.users,
+    roles: MANAGER_ONLY,
+  },
+
+
+  /* ----------------------------------------------------------
+     AI CONTENT STUDIO
+     
+     Manager + Campaign Person
+     NOT Admin
+     ---------------------------------------------------------- */
 
   {
     key: "aiStudio",
     label: "AI Content Studio",
     icon: icons.sparkle,
-    roles: ALL_ROLES,
+    roles: MANAGER_PERSON,
   },
+
+
+  /* ----------------------------------------------------------
+     CAMPAIGN PIPELINE
+     
+     Admin + Manager
+     ---------------------------------------------------------- */
 
   {
     key: "pipeline",
     label: "Campaign Pipeline",
-    icon: icons.sparkle,
-    roles: CAMPAIGN_WORKFLOW_ROLES,
+    icon: icons.layout,
+    roles: ADMIN_MANAGER,
   },
+
+
+  /* ----------------------------------------------------------
+     TEMPLATES
+     
+     All authenticated roles
+     ---------------------------------------------------------- */
 
   {
     key: "templates",
     label: "Templates",
     icon: icons.layout,
-    roles: ALL_ROLES,
+    roles: ADMIN_MANAGER_PERSON,
   },
 
-  {
-    key: "audience",
-    label: "Audience",
-    icon: icons.users,
-    roles: MANAGEMENT_ROLES,
-  },
+
+  /* ----------------------------------------------------------
+     AUDIENCE
+     
+     REMOVED FROM NAVIGATION
+     
+     The AppView type still contains "audience" for
+     compatibility with existing code, but there is
+     intentionally no menu item here.
+     ---------------------------------------------------------- */
+
+
+  /* ----------------------------------------------------------
+     VOICE ASSISTANT
+     
+     ALL ROLES
+     ---------------------------------------------------------- */
 
   {
     key: "voice",
     label: "Voice Assistant",
     icon: icons.mic,
-    roles: ALL_ROLES,
+    roles: [
+      "campaign_manager",
+      "comms_team",
+    ],
   },
+
+
+  /* ----------------------------------------------------------
+     TRANSLATIONS
+     
+     Manager + Campaign Person
+     NOT Admin
+     ---------------------------------------------------------- */
 
   {
     key: "translations",
     label: "Translations",
     icon: icons.globe,
-    roles: ALL_ROLES,
+    roles: MANAGER_PERSON,
   },
+
+
+  /* ----------------------------------------------------------
+     COMPLIANCE
+     
+     Manager + Campaign Person
+     NOT Admin
+     ---------------------------------------------------------- */
 
   {
     key: "compliance",
     label: "Compliance",
     icon: icons.shield,
-    roles: ADMIN_ONLY,
+    roles: MANAGER_PERSON,
   },
+
+
+  /* ----------------------------------------------------------
+     CONTENT REVIEW
+     
+     All roles
+     ---------------------------------------------------------- */
 
   {
     key: "review",
     label: "Content Review",
-    icon: icons.shield,
-    roles: CAMPAIGN_WORKFLOW_ROLES,
+    icon: icons.clock,
+    roles: ALL_ROLES,
   },
+
+
+  /* ----------------------------------------------------------
+     AI CHAT ASSISTANT
+     
+     ALL ROLES
+     ---------------------------------------------------------- */
 
   {
     key: "chat",
@@ -145,12 +293,26 @@ const NAV_ITEMS: NavItem[] = [
     roles: ALL_ROLES,
   },
 
+
+  /* ----------------------------------------------------------
+     CHAT HISTORY
+     
+     ALL ROLES
+     ---------------------------------------------------------- */
+
   {
     key: "chatHistory",
     label: "Chat History",
     icon: icons.clock,
     roles: ALL_ROLES,
   },
+
+
+  /* ----------------------------------------------------------
+     REPORTS
+     
+     ALL ROLES
+     ---------------------------------------------------------- */
 
   {
     key: "reports",
@@ -159,31 +321,40 @@ const NAV_ITEMS: NavItem[] = [
     roles: ALL_ROLES,
   },
 
+
+  /* ----------------------------------------------------------
+     SETTINGS
+     
+     Admin + Manager
+     NOT Campaign Person
+     ---------------------------------------------------------- */
+
   {
     key: "settings",
     label: "Settings",
     icon: icons.settings,
-    roles: ADMIN_ONLY,
+    roles: ADMIN_MANAGER,
   },
 ];
 
-/*
- * ============================================================
- * ROLE LABELS
- * ============================================================
- */
 
-const ROLE_LABELS: Record<UserRole, string> = {
+/* ============================================================
+   ROLE LABELS
+   ============================================================ */
+
+const ROLE_LABELS: Record<
+  UserRole,
+  string
+> = {
   admin: "Admin",
-  campaign_manager: "Campaign Manager",
-  comms_team: "User",
+  campaign_manager: "Manager",
+  comms_team: "Campaign Person",
 };
 
-/*
- * ============================================================
- * SIDEBAR
- * ============================================================
- */
+
+/* ============================================================
+   SIDEBAR
+   ============================================================ */
 
 export default function Sidebar({
   active,
@@ -191,193 +362,381 @@ export default function Sidebar({
   userEmail,
   userRole,
   onLogout,
-}: {
-  active: AppView;
-  onNavigate: (v: AppView) => void;
-  userEmail: string;
-  userRole: UserRole;
-  onLogout: () => void;
-}) {
-  const [showLogoutConfirmation, setShowLogoutConfirmation] =
-    useState(false);
+}: SidebarProps) {
 
-  const visibleItems = NAV_ITEMS.filter((item) =>
-    item.roles.includes(userRole)
-  );
+  /* ==========================================================
+     FILTER MENU BY ROLE
+     ========================================================== */
 
-  function handleLogoutClick() {
-    setShowLogoutConfirmation(true);
+  const visibleItems =
+    MENU_ITEMS.filter(
+      (item) =>
+        item.roles.includes(
+          userRole
+        )
+    );
+
+
+  /* ==========================================================
+     INITIALS
+     ========================================================== */
+
+  const initials =
+    userEmail
+      .split("@")[0]
+      .trim()
+      .split(
+        /[\s._-]+/
+      )
+      .filter(Boolean)
+      .slice(
+        0,
+        2
+      )
+      .map(
+        (part) =>
+          part.charAt(0)
+      )
+      .join("")
+      .toUpperCase() ||
+    "U";
+
+
+  /* ==========================================================
+     NAVIGATION
+     ========================================================== */
+
+  function handleNavigate(
+    view: AppView
+  ) {
+
+    onNavigate(
+      view
+    );
+
+
+    /*
+     * Keep the existing custom navigation
+     * event system working.
+     */
+
+    window.dispatchEvent(
+      new CustomEvent(
+        "navigate-view",
+        {
+          detail:
+            view,
+        }
+      )
+    );
   }
 
-  function handleCancelLogout() {
-    setShowLogoutConfirmation(false);
-  }
 
-  function handleConfirmLogout() {
-    setShowLogoutConfirmation(false);
-    onLogout();
-  }
+  /* ==========================================================
+     RENDER
+     ========================================================== */
 
   return (
-    <>
-      <aside className="flex h-screen w-64 flex-shrink-0 flex-col bg-gradient-to-b from-[#6C5CE7] to-[#5A3FD6] text-white">
+    <aside
+      className="
+        flex
+        h-screen
+        w-[218px]
+        flex-shrink-0
+        flex-col
+        bg-[#4032C5]
+        text-white
+      "
+    >
 
-        {/* ================================================== */}
-        {/* LOGO                                               */}
-        {/* ================================================== */}
+      {/* ======================================================
+         BRAND
+         ====================================================== */}
 
-        <div className="flex items-center gap-2.5 px-5 py-5">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white/15">
+      <div
+        className="
+          flex
+          h-[76px]
+          items-center
+          px-4
+        "
+      >
+
+        <div className="flex items-center gap-3">
+
+          <div
+            className="
+              flex
+              h-10
+              w-10
+              flex-shrink-0
+              items-center
+              justify-center
+              rounded-xl
+              bg-white/15
+            "
+          >
+
             <Icon
-              path={icons.speaker}
-              className="h-4.5 w-4.5 text-white"
+              path={
+                icons.megaphone
+              }
+              className="h-5 w-5 text-white"
             />
+
           </div>
 
-          <div>
-            <p className="text-[15px] font-bold leading-none">
+
+          <div className="min-w-0">
+
+            <p
+              className="
+                truncate
+                text-[16px]
+                font-bold
+                leading-tight
+                text-white
+              "
+            >
               CampaignHub
             </p>
 
-            <p className="mt-1 text-[10.5px] leading-none text-white/60">
+            <p
+              className="
+                mt-0.5
+                text-[9px]
+                leading-tight
+                text-indigo-100
+              "
+            >
               Mass Communication
             </p>
+
           </div>
+
         </div>
 
-        {/* ================================================== */}
-        {/* NAVIGATION                                         */}
-        {/* ================================================== */}
+      </div>
 
-        <nav className="mt-2 flex-1 space-y-1 overflow-y-auto px-3">
-          {visibleItems.map((item) => {
-            const isActive = active === item.key;
 
-            return (
-              <button
-                key={item.key}
-                type="button"
-                onClick={() => onNavigate(item.key)}
-                className={`flex w-full items-center gap-3 rounded-xl px-3.5 py-2.5 text-left text-[13.5px] font-medium transition ${
-                  isActive
-                    ? "bg-white text-[#5A3FD6] shadow-sm"
-                    : "text-white/80 hover:bg-white/10"
-                }`}
+      {/* ======================================================
+         NAVIGATION
+         ====================================================== */}
+
+      <nav
+        className="
+          flex-1
+          overflow-y-auto
+          px-3
+          py-4
+        "
+      >
+
+        <div className="space-y-1">
+
+          {visibleItems.map(
+            (
+              item
+            ) => {
+
+              const selected =
+                active ===
+                item.key;
+
+
+              return (
+                <button
+                  key={
+                    item.key
+                  }
+                  type="button"
+                  onClick={() =>
+                    handleNavigate(
+                      item.key
+                    )
+                  }
+                  className={`
+                    flex
+                    w-full
+                    items-center
+                    gap-3
+                    rounded-xl
+                    px-3
+                    py-2.5
+                    text-left
+                    text-[12px]
+                    font-semibold
+                    transition
+                    ${
+                      selected
+                        ? "bg-white text-[#4032C5]"
+                        : "text-white hover:bg-white/10"
+                    }
+                  `}
+                >
+
+                  <Icon
+                    path={
+                      item.icon
+                    }
+                    className={`
+                      h-[17px]
+                      w-[17px]
+                      flex-shrink-0
+                      ${
+                        selected
+                          ? "text-[#4032C5]"
+                          : "text-white"
+                      }
+                    `}
+                  />
+
+
+                  <span className="truncate">
+                    {
+                      item.label
+                    }
+                  </span>
+
+                </button>
+              );
+            }
+          )}
+
+        </div>
+
+      </nav>
+
+
+      {/* ======================================================
+         ACCOUNT
+         ====================================================== */}
+
+      <div
+        className="
+          border-t
+          border-white/10
+          p-3
+        "
+      >
+
+        <div
+          className="
+            rounded-xl
+            bg-white/10
+            p-3
+          "
+        >
+
+          <div
+            className="
+              flex
+              items-center
+              gap-2.5
+            "
+          >
+
+            <div
+              className="
+                flex
+                h-9
+                w-9
+                flex-shrink-0
+                items-center
+                justify-center
+                rounded-full
+                bg-white/15
+                text-[10px]
+                font-bold
+                text-white
+              "
+            >
+              {
+                initials
+              }
+            </div>
+
+
+            <div
+              className="
+                min-w-0
+                flex-1
+              "
+            >
+
+              <p
+                className="
+                  truncate
+                  text-[11px]
+                  font-semibold
+                  text-white
+                "
               >
-                <Icon
-                  path={item.icon}
-                  className="h-4.5 w-4.5 flex-shrink-0"
-                />
-
-                {item.label}
-              </button>
-            );
-          })}
-        </nav>
-
-        {/* ================================================== */}
-        {/* USER INFORMATION + LOGOUT                          */}
-        {/* ================================================== */}
-
-        <div className="border-t border-white/15 px-4 py-4">
-
-          <div className="flex items-center gap-2.5">
-
-            {/* Avatar */}
-
-            <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-white/15 text-[12px] font-semibold uppercase">
-              {userEmail.charAt(0) || "U"}
-            </div>
-
-            {/* User information */}
-
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-[12px] font-semibold leading-none">
-                {userEmail}
+                {
+                  ROLE_LABELS[
+                    userRole
+                  ]
+                }
               </p>
 
-              <p className="mt-1 text-[10.5px] leading-none text-white/55">
-                {ROLE_LABELS[userRole]}
+              <p
+                className="
+                  truncate
+                  text-[9px]
+                  text-indigo-100
+                "
+              >
+                {
+                  userEmail
+                }
               </p>
+
             </div>
 
-            <Icon
-              path={icons.settings}
-              className="h-4 w-4 flex-shrink-0 text-white/60"
-            />
           </div>
 
-          {/* ================================================= */}
-          {/* LOGOUT BUTTON                                     */}
-          {/* ================================================= */}
+
+          {/* ==================================================
+             LOGOUT
+             ================================================== */}
 
           <button
             type="button"
-            onClick={handleLogoutClick}
-            className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/10 px-3 py-2.5 text-[12.5px] font-medium text-white transition hover:bg-white/20"
+            onClick={
+              onLogout
+            }
+            className="
+              mt-3
+              flex
+              w-full
+              items-center
+              justify-center
+              gap-2
+              rounded-lg
+              bg-white/10
+              px-3
+              py-2
+              text-[10px]
+              font-semibold
+              text-white
+              transition
+              hover:bg-white
+              hover:text-[#4032C5]
+            "
           >
-            <span>↪</span>
+
+            <span className="text-[12px]">
+              ↪
+            </span>
+
             Logout
+
           </button>
 
         </div>
-      </aside>
 
-      {/* ==================================================== */}
-      {/* LOGOUT CONFIRMATION MODAL                            */}
-      {/* ==================================================== */}
+      </div>
 
-      {showLogoutConfirmation && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
-          onClick={handleCancelLogout}
-        >
-          <div
-            className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl"
-            onClick={(event) => event.stopPropagation()}
-          >
-            {/* Icon */}
-
-            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-[#EDE9FE] text-[#5A3FD6]">
-              <span className="text-xl">↪</span>
-            </div>
-
-            {/* Title */}
-
-            <h2 className="mt-4 text-center text-[18px] font-bold text-slate-900">
-              Logout?
-            </h2>
-
-            {/* Message */}
-
-            <p className="mt-2 text-center text-[13px] leading-5 text-slate-500">
-              Are you sure you want to log out of CampaignHub?
-            </p>
-
-            {/* Buttons */}
-
-            <div className="mt-6 flex gap-3">
-
-              <button
-                type="button"
-                onClick={handleCancelLogout}
-                className="flex-1 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-[13px] font-semibold text-slate-700 transition hover:bg-slate-50"
-              >
-                Cancel
-              </button>
-
-              <button
-                type="button"
-                onClick={handleConfirmLogout}
-                className="flex-1 rounded-xl bg-[#5A3FD6] px-4 py-2.5 text-[13px] font-semibold text-white transition hover:bg-[#4C32C2]"
-              >
-                Logout
-              </button>
-
-            </div>
-          </div>
-        </div>
-      )}
-    </>
+    </aside>
   );
 }

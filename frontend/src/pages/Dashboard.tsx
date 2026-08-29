@@ -1,18 +1,23 @@
-﻿import { useEffect, useMemo, useState } from "react";
+﻿import {
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
+
+import type { ReactNode } from "react";
+
 import {
-  LineChart,
-  Line,
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
   XAxis,
   YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell,
 } from "recharts";
-
-import { Icon, icons } from "../components/Icon";
 
 import {
   fetchCampaigns,
@@ -20,124 +25,60 @@ import {
 } from "../api/campaign";
 
 import {
-  fetchCampaignDeliverySummary,
-  type CampaignDeliverySummary,
-} from "../api/messageDelivery";
-
-import {
   fetchAnalyticsSummary,
   type AnalyticsSummary,
 } from "../api/analytics";
 
-/* ============================================================
-   STATUS CONFIGURATION
-   ============================================================ */
+import {
+  fetchAudience,
+  type AudienceMember,
+} from "../api/audience";
 
-const STATUS_BUCKETS = [
-  {
-    key: "draft",
-    label: "Draft",
-    color: "#6C5CE7",
-  },
-  {
-    key: "review",
-    label: "In Review",
-    color: "#3B8FF3",
-  },
-  {
-    key: "scheduled",
-    label: "Scheduled",
-    color: "#F0942F",
-  },
-  {
-    key: "active",
-    label: "Active",
-    color: "#22C55E",
-  },
-  {
-    key: "completed",
-    label: "Completed",
-    color: "#94A3B8",
-  },
-  {
-    key: "failed",
-    label: "Failed",
-    color: "#F43F5E",
-  },
-];
+import {
+  apiClient,
+} from "../api/client";
+
+import {
+  Icon,
+  icons,
+} from "../components/Icon";
+
 
 /* ============================================================
-   STATUS BUCKET
+   PROPS
    ============================================================ */
 
-function bucketFor(status: string) {
-  switch (status) {
-    case "draft":
-      return STATUS_BUCKETS[0];
+interface DashboardProps {
+  userEmail: string;
 
-    case "review":
-      return STATUS_BUCKETS[1];
-
-    case "ready":
-    case "scheduled":
-      return STATUS_BUCKETS[2];
-
-    case "sending":
-      return STATUS_BUCKETS[3];
-
-    case "completed":
-      return STATUS_BUCKETS[4];
-
-    case "failed":
-      return STATUS_BUCKETS[5];
-
-    default:
-      return STATUS_BUCKETS[0];
-  }
+  userRole:
+    | "admin"
+    | "campaign_manager"
+    | "comms_team";
 }
 
+
 /* ============================================================
-   LAST 7 DAYS
+   MANAGER TEAM RESPONSE
    ============================================================ */
 
-function last7Days(): {
-  label: string;
-  dateKey: string;
-}[] {
-  const result: {
-    label: string;
-    dateKey: string;
-  }[] = [];
-
-  const formatter = new Intl.DateTimeFormat(
-    undefined,
-    {
-      weekday: "short",
-    }
-  );
-
-  const now = new Date();
-
-  for (let index = 6; index >= 0; index -= 1) {
-    const date = new Date(now);
-
-    date.setHours(0, 0, 0, 0);
-    date.setDate(date.getDate() - index);
-
-    const dateKey = [
-      date.getFullYear(),
-      String(date.getMonth() + 1).padStart(2, "0"),
-      String(date.getDate()).padStart(2, "0"),
-    ].join("-");
-
-    result.push({
-      label: formatter.format(date),
-      dateKey,
-    });
-  }
-
-  return result;
+interface TeamMember {
+  id: string;
+  name: string | null;
+  email: string;
+  phone: string | null;
+  role: string;
+  is_active: boolean;
+  registration_date: string | null;
+  manager_id: string | null;
 }
+
+interface TeamMembersResponse {
+  manager_id: string | null;
+  total: number;
+  members: TeamMember[];
+}
+
 
 /* ============================================================
    STAT CARD
@@ -149,75 +90,119 @@ function StatCard({
   hint,
   icon,
   iconBg,
+  hintClassName = "text-emerald-600",
 }: {
   label: string;
   value: string;
   hint: string;
-  icon: string;
+  icon: ReactNode;
   iconBg: string;
+  hintClassName?: string;
 }) {
   return (
-    <div className="flex-1 rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
+    <div className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
       <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-[13px] text-slate-500">
+
+        <div className="min-w-0">
+
+          <p className="text-[11px] font-medium text-slate-500">
             {label}
           </p>
 
-          <p className="mt-3 text-[30px] font-bold leading-none text-slate-900">
+          <p className="mt-2 text-[25px] font-bold tracking-tight text-slate-900">
             {value}
           </p>
 
-          <p className="mt-3 text-[11.5px] font-semibold text-emerald-600">
+          <p
+            className={`mt-1 text-[10px] font-medium ${hintClassName}`}
+          >
             {hint}
           </p>
+
         </div>
 
         <div
-          className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl"
+          className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl text-white"
           style={{
             backgroundColor: iconBg,
           }}
         >
-          <Icon
-            path={icon}
-            className="h-5 w-5 text-white"
-          />
+          {icon}
         </div>
+
       </div>
     </div>
   );
 }
 
+
 /* ============================================================
-   DELIVERY STAT CARD
+   MINI CARD
    ============================================================ */
 
-function DeliveryStatCard({
+function MiniCard({
   label,
   value,
-  description,
+  hint,
+  icon,
+  bg,
 }: {
   label: string;
-  value: number;
-  description: string;
+  value: string;
+  hint: string;
+  icon: ReactNode;
+  bg: string;
 }) {
   return (
-    <div className="rounded-xl bg-slate-50 p-3.5">
-      <p className="text-[11.5px] text-slate-500">
-        {label}
-      </p>
+    <div className="rounded-xl bg-slate-50 p-3">
 
-      <p className="mt-1 text-[21px] font-bold text-slate-900">
-        {value}
-      </p>
+      <div className="flex items-start gap-2">
 
-      <p className="mt-1 text-[10.5px] text-slate-400">
-        {description}
-      </p>
+        <div
+          className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg"
+          style={{
+            backgroundColor: bg,
+          }}
+        >
+          {icon}
+        </div>
+
+        <div className="min-w-0">
+
+          <p className="text-[9px] text-slate-400">
+            {label}
+          </p>
+
+          <p className="mt-0.5 text-[15px] font-bold text-slate-800">
+            {value}
+          </p>
+
+          <p className="mt-0.5 text-[8.5px] font-medium text-emerald-600">
+            {hint}
+          </p>
+
+        </div>
+
+      </div>
+
     </div>
   );
 }
+
+
+/* ============================================================
+   STATUS COLORS
+   ============================================================ */
+
+const STATUS_COLORS = [
+  "#6654E9",
+  "#338CF0",
+  "#F59E0B",
+  "#10B981",
+  "#94A3B8",
+  "#F43F5E",
+];
+
 
 /* ============================================================
    DASHBOARD
@@ -225,9 +210,21 @@ function DeliveryStatCard({
 
 export default function Dashboard({
   userEmail,
-}: {
-  userEmail: string;
-}) {
+  userRole,
+}: DashboardProps) {
+
+  /* ==========================================================
+     WELCOME NAME
+     ========================================================== */
+
+  const greetingName =
+    userRole === "admin"
+      ? "Admin"
+      : userRole === "campaign_manager"
+        ? "Manager"
+        : "Campaign Person";
+
+
   /* ==========================================================
      CAMPAIGNS
      ========================================================== */
@@ -235,195 +232,389 @@ export default function Dashboard({
   const [campaigns, setCampaigns] =
     useState<Campaign[]>([]);
 
-  const [campaignLoading, setCampaignLoading] =
-    useState(true);
-
-  const [campaignError, setCampaignError] =
-    useState<string | null>(null);
 
   /* ==========================================================
-     GLOBAL ANALYTICS
+     ANALYTICS
      ========================================================== */
 
   const [analytics, setAnalytics] =
-    useState<AnalyticsSummary | null>(null);
+    useState<AnalyticsSummary | null>(
+      null
+    );
 
-  const [analyticsLoading, setAnalyticsLoading] =
-    useState(true);
-
-  const [analyticsError, setAnalyticsError] =
-    useState<string | null>(null);
 
   /* ==========================================================
-     CAMPAIGN DELIVERY
+     AUDIENCE
+     ========================================================== */
+
+  const [audience, setAudience] =
+    useState<AudienceMember[]>([]);
+
+
+  /* ==========================================================
+     MANAGER TEAM MEMBERS
      ========================================================== */
 
   const [
-    campaignDelivery,
-    setCampaignDelivery,
-  ] = useState<CampaignDeliverySummary[]>([]);
+    teamMembers,
+    setTeamMembers,
+  ] = useState<TeamMember[]>([]);
+
 
   const [
-    deliveryLoading,
-    setDeliveryLoading,
-  ] = useState(true);
+    teamMemberCount,
+    setTeamMemberCount,
+  ] = useState(0);
 
-  const [
-    deliveryError,
-    setDeliveryError,
-  ] = useState<string | null>(null);
 
   /* ==========================================================
-     LOAD CAMPAIGNS + ANALYTICS
+     LOADING
+     ========================================================== */
+
+  const [loading, setLoading] =
+    useState(true);
+
+
+  /* ==========================================================
+     ERROR
+     ========================================================== */
+
+  const [error, setError] =
+    useState<string | null>(null);
+
+
+  /* ==========================================================
+     LOAD DASHBOARD DATA
      ========================================================== */
 
   useEffect(() => {
+
     let cancelled = false;
 
-    async function loadDashboard() {
-      setCampaignLoading(true);
-      setAnalyticsLoading(true);
 
-      setCampaignError(null);
-      setAnalyticsError(null);
+    async function load() {
 
-      const [
-        campaignResult,
-        analyticsResult,
-      ] = await Promise.allSettled([
+      setLoading(true);
+      setError(null);
+
+
+      /*
+       * Manager needs:
+       * - campaigns
+       * - analytics
+       * - audience
+       * - team members
+       *
+       * Admin needs:
+       * - campaigns
+       * - analytics
+       * - audience
+       *
+       * Campaign Person needs:
+       * - campaigns
+       * - analytics
+       * - audience
+       */
+
+      const requests: Promise<unknown>[] = [
         fetchCampaigns(),
         fetchAnalyticsSummary(),
-      ]);
+        fetchAudience(),
+      ];
+
+
+      if (
+        userRole ===
+        "campaign_manager"
+      ) {
+
+        requests.push(
+          apiClient
+            .get<TeamMembersResponse>(
+              "/users/team-members"
+            )
+            .then(
+              (
+                response
+              ) =>
+                response.data
+            )
+        );
+
+      }
+
+
+      const results =
+        await Promise.allSettled(
+          requests
+        );
+
 
       if (cancelled) {
         return;
       }
 
-      /* ------------------------------------------------------
+
+      let failed = false;
+
+
+      /* ======================================================
          CAMPAIGNS
-         ------------------------------------------------------ */
+         ====================================================== */
+
+      const campaignsResult =
+        results[0];
+
 
       if (
-        campaignResult.status === "fulfilled"
+        campaignsResult?.status ===
+        "fulfilled"
       ) {
+
         setCampaigns(
-          campaignResult.value
-        );
-      } else {
-        console.error(
-          "Could not load campaigns:",
-          campaignResult.reason
+          campaignsResult.value as Campaign[]
         );
 
-        setCampaignError(
-          "Could not load campaigns"
+      } else {
+
+        failed = true;
+
+        console.error(
+          "Campaign loading failed:",
+          campaignsResult?.reason
         );
+
       }
 
-      /* ------------------------------------------------------
+
+      /* ======================================================
          ANALYTICS
-         ------------------------------------------------------ */
+         ====================================================== */
+
+      const analyticsResult =
+        results[1];
+
 
       if (
-        analyticsResult.status === "fulfilled"
+        analyticsResult?.status ===
+        "fulfilled"
       ) {
+
         setAnalytics(
-          analyticsResult.value
+          analyticsResult.value as AnalyticsSummary
         );
+
       } else {
+
+        failed = true;
+
         console.error(
-          "Could not load analytics:",
-          analyticsResult.reason
+          "Analytics loading failed:",
+          analyticsResult?.reason
         );
 
-        setAnalyticsError(
-          "Could not load analytics"
+      }
+
+
+      /* ======================================================
+         AUDIENCE
+         ====================================================== */
+
+      const audienceResult =
+        results[2];
+
+
+      if (
+        audienceResult?.status ===
+        "fulfilled"
+      ) {
+
+        setAudience(
+          audienceResult.value as AudienceMember[]
         );
+
       }
 
-      setCampaignLoading(false);
-      setAnalyticsLoading(false);
-    }
 
-    void loadDashboard();
+      /* ======================================================
+         MANAGER TEAM
+         ====================================================== */
 
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+      if (
+        userRole ===
+        "campaign_manager"
+      ) {
 
-  /* ==========================================================
-     LOAD CAMPAIGN DELIVERY
-     ========================================================== */
+        const teamResult =
+          results[3];
 
-  useEffect(() => {
-    let cancelled = false;
 
-    async function loadCampaignDelivery() {
-      if (campaigns.length === 0) {
-        setCampaignDelivery([]);
-        setDeliveryLoading(false);
-        setDeliveryError(null);
-        return;
-      }
+        if (
+          teamResult?.status ===
+          "fulfilled"
+        ) {
 
-      setDeliveryLoading(true);
-      setDeliveryError(null);
+          const data =
+            teamResult.value as TeamMembersResponse;
 
-      try {
-        const results =
-          await Promise.all(
-            campaigns.map(
-              (campaign) =>
-                fetchCampaignDeliverySummary(
-                  campaign.id
-                )
-            )
+
+          setTeamMembers(
+            data.members ?? []
           );
 
-        if (!cancelled) {
-          setCampaignDelivery(results);
-        }
-      } catch (error) {
-        console.error(
-          "Could not load campaign delivery performance:",
-          error
-        );
 
-        if (!cancelled) {
-          setDeliveryError(
-            "Could not load campaign delivery performance"
+          setTeamMemberCount(
+            data.total ?? 0
           );
 
-          setCampaignDelivery([]);
+        } else {
+
+          /*
+           * Team loading failure should not
+           * destroy the whole dashboard.
+           */
+
+          console.error(
+            "Team members loading failed:",
+            teamResult?.reason
+          );
+
+          setTeamMembers([]);
+          setTeamMemberCount(0);
+
         }
-      } finally {
-        if (!cancelled) {
-          setDeliveryLoading(false);
-        }
+
+      } else {
+
+        setTeamMembers([]);
+        setTeamMemberCount(0);
+
       }
+
+
+      /* ======================================================
+         ERROR MESSAGE
+         ====================================================== */
+
+      if (failed) {
+
+        setError(
+          "Some dashboard data could not be loaded."
+        );
+
+      }
+
+
+      setLoading(false);
     }
 
-    void loadCampaignDelivery();
+
+    void load();
+
 
     return () => {
+
       cancelled = true;
+
     };
-  }, [campaigns]);
+
+  }, [
+    userRole,
+  ]);
+
 
   /* ==========================================================
-     GLOBAL VALUES
+     TOTAL CAMPAIGNS
+     
+     IMPORTANT:
+     
+     Admin:
+       Uses global analytics total.
+     
+     Manager:
+       Uses Manager's actual campaigns.
+     
+     Campaign Person:
+       Uses Campaign Person's actual campaigns.
      ========================================================== */
 
   const totalCampaigns =
-    analytics?.total_campaigns ??
-    campaigns.length;
+    userRole === "admin"
+      ? analytics?.total_campaigns ??
+        campaigns.length
+      : campaigns.length;
+
+
+  /* ==========================================================
+     ACTIVE CAMPAIGNS
+     
+     Always calculated from the campaigns
+     returned for this user.
+     ========================================================== */
 
   const activeCampaigns =
     campaigns.filter(
       (campaign) =>
-        campaign.status === "sending"
+        campaign.status ===
+        "sending"
     ).length;
+
+
+  /* ==========================================================
+     PENDING REVIEW
+     ========================================================== */
+
+  const pendingReview =
+    campaigns.filter(
+      (campaign) =>
+        campaign.status ===
+        "review"
+    ).length;
+
+
+  /* ==========================================================
+     AUDIENCE COUNT
+     ========================================================== */
+
+  const totalAudience =
+    audience.length;
+
+
+  /* ==========================================================
+     DELIVERY RATE
+     ========================================================== */
+
+  const deliveryRate =
+    analytics?.delivery_rate ??
+    0;
+
+
+  /* ==========================================================
+     FAILURE RATE
+     ========================================================== */
+
+  const failureRate =
+    analytics?.failure_rate ??
+    0;
+
+
+  /* ==========================================================
+     SENT
+     ========================================================== */
+
+  const sent =
+    analytics?.sent ??
+    0;
+
+
+  /* ==========================================================
+     DELIVERED
+     ========================================================== */
+
+  const delivered =
+    analytics?.delivered ??
+    0;
+
 
   /* ==========================================================
      STATUS COUNTS
@@ -431,344 +622,471 @@ export default function Dashboard({
 
   const statusCounts =
     useMemo(() => {
-      const counts: Record<
-        string,
-        number
-      > = {};
 
-      STATUS_BUCKETS.forEach(
-        (bucket) => {
-          counts[bucket.key] = 0;
-        }
-      );
+      const counts = {
+        draft: 0,
+        review: 0,
+        scheduled: 0,
+        sending: 0,
+        completed: 0,
+        failed: 0,
+      };
 
-      campaigns.forEach(
-        (campaign) => {
-          const bucket =
-            bucketFor(
-              campaign.status
-            );
-
-          counts[bucket.key] += 1;
-        }
-      );
-
-      return counts;
-    }, [campaigns]);
-
-  /* ==========================================================
-     PIE DATA
-     ========================================================== */
-
-  const pieData =
-    STATUS_BUCKETS.map(
-      (bucket) => ({
-        name: bucket.label,
-        value:
-          statusCounts[bucket.key],
-        color: bucket.color,
-      })
-    );
-
-  const hasCampaignData =
-    totalCampaigns > 0;
-
-  /* ==========================================================
-     CAMPAIGN TIMELINE
-     ========================================================== */
-
-  const timelineData =
-    useMemo(() => {
-      const buckets =
-        last7Days().map(
-          ({ label, dateKey }) => ({
-            label,
-            dateKey,
-            count: 0,
-          })
-        );
 
       campaigns.forEach(
-        (campaign) => {
-          if (!campaign.created_at) {
-            return;
+        (
+          campaign
+        ) => {
+
+          if (
+            campaign.status in
+            counts
+          ) {
+
+            counts[
+              campaign.status as keyof typeof counts
+            ] += 1;
+
           }
 
-          const dateKey =
-            campaign.created_at.slice(
+        }
+      );
+
+
+      return counts;
+
+    }, [
+      campaigns,
+    ]);
+
+
+  /* ==========================================================
+     STATUS DATA
+     ========================================================== */
+
+  const statusData = [
+    {
+      name: "Draft",
+      value:
+        statusCounts.draft,
+    },
+
+    {
+      name: "In Review",
+      value:
+        statusCounts.review,
+    },
+
+    {
+      name: "Scheduled",
+      value:
+        statusCounts.scheduled,
+    },
+
+    {
+      name: "Active",
+      value:
+        statusCounts.sending,
+    },
+
+    {
+      name: "Completed",
+      value:
+        statusCounts.completed,
+    },
+
+    {
+      name: "Failed",
+      value:
+        statusCounts.failed,
+    },
+  ];
+
+
+  /* ==========================================================
+     LAST 7 DAYS
+     ========================================================== */
+
+  const lastSevenDays =
+    useMemo(() => {
+
+      const result: {
+        label: string;
+        count: number;
+      }[] = [];
+
+
+      const today =
+        new Date();
+
+
+      for (
+        let i = 6;
+        i >= 0;
+        i--
+      ) {
+
+        const date =
+          new Date(
+            today
+          );
+
+
+        date.setDate(
+          today.getDate() - i
+        );
+
+
+        const key =
+          date
+            .toISOString()
+            .slice(
               0,
               10
             );
 
-          const bucket =
-            buckets.find(
-              (item) =>
-                item.dateKey ===
-                dateKey
-            );
 
-          if (bucket) {
-            bucket.count += 1;
-          }
+        const count =
+          campaigns.filter(
+            (
+              campaign
+            ) =>
+              campaign.created_at?.slice(
+                0,
+                10
+              ) === key
+          ).length;
+
+
+        result.push({
+          label:
+            date.toLocaleDateString(
+              "en-US",
+              {
+                weekday:
+                  "short",
+              }
+            ),
+
+          count,
+        });
+
+      }
+
+
+      return result;
+
+    }, [
+      campaigns,
+    ]);
+
+
+  /* ==========================================================
+     RECENT CAMPAIGNS
+     ========================================================== */
+
+  const recentCampaigns =
+    useMemo(() => {
+
+      return [
+        ...campaigns,
+      ]
+        .sort(
+          (
+            a,
+            b
+          ) =>
+            new Date(
+              b.created_at ??
+                0
+            ).getTime() -
+            new Date(
+              a.created_at ??
+                0
+            ).getTime()
+        )
+        .slice(
+          0,
+          4
+        );
+
+    }, [
+      campaigns,
+    ]);
+
+
+  /* ==========================================================
+     NAVIGATION
+     ========================================================== */
+
+  function navigate(
+    view: string
+  ) {
+
+    window.dispatchEvent(
+      new CustomEvent(
+        "navigate-view",
+        {
+          detail:
+            view,
         }
-      );
+      )
+    );
 
-      return buckets;
-    }, [campaigns]);
+  }
 
-  /* ==========================================================
-     DELIVERY VALUES
-     ========================================================== */
 
-  const deliveryTotals = {
-    total:
-      analytics?.total_deliveries ?? 0,
+  /* ============================================================
+     ADMIN DASHBOARD
+     ============================================================ */
 
-    sent:
-      analytics?.sent ?? 0,
+  if (
+    userRole ===
+    "admin"
+  ) {
 
-    delivered:
-      analytics?.delivered ?? 0,
+    return (
+      <div className="flex-1 overflow-y-auto bg-slate-50 px-8 py-6">
 
-    pending:
-      analytics?.pending ?? 0,
+        {/* HEADER */}
 
-    failed:
-      analytics?.failed ?? 0,
-  };
+        <div className="flex items-start justify-between">
 
-  const deliveryRate =
-    analytics?.delivery_rate ?? 0;
+          <div>
 
-  const failureRate =
-    analytics?.failure_rate ?? 0;
+            <h1 className="text-[22px] font-bold text-slate-900">
+              Welcome back,{" "}
+              {greetingName} 👋
+            </h1>
 
-  /* ==========================================================
-     RENDER
-     ========================================================== */
+            <p className="mt-1 text-[12px] text-slate-500">
+              Here's an overview of your platform.
+            </p>
 
-  return (
-    <div className="flex-1 overflow-y-auto bg-slate-50 px-8 py-6">
-
-      {/* ======================================================
-          HEADER
-         ====================================================== */}
-
-      <div>
-        <h1 className="text-[22px] font-bold text-slate-900">
-          Welcome back, {userEmail}{" "}
-          <span>👋</span>
-        </h1>
-
-        <p className="mt-1 text-[13px] text-slate-500">
-          Here&apos;s an overview of
-          your communication campaigns.
-        </p>
-      </div>
-
-      {(campaignError ||
-        analyticsError) && (
-        <p className="mt-3 text-[12.5px] text-rose-500">
-          {campaignError ||
-            analyticsError}
-        </p>
-      )}
-
-      {/* ======================================================
-          MAIN STAT CARDS
-         ====================================================== */}
-
-      <div className="mt-5 flex flex-col gap-4 sm:flex-row">
-
-        <StatCard
-          label="Total Campaigns"
-          value={
-            campaignLoading ||
-            analyticsLoading
-              ? "..."
-              : String(
-                  analytics?.total_campaigns ??
-                    totalCampaigns
-                )
-          }
-          hint="Based on your campaigns"
-          icon={icons.speaker}
-          iconBg="#6C5CE7"
-        />
-
-        <StatCard
-          label="Active Campaigns"
-          value={
-            campaignLoading
-              ? "..."
-              : String(
-                  activeCampaigns
-                )
-          }
-          hint={
-            activeCampaigns === 0
-              ? "No active campaigns"
-              : `${activeCampaigns} running now`
-          }
-          icon={icons.layout}
-          iconBg="#EC5AA7"
-        />
-
-        <StatCard
-          label="Audience Reach"
-          value={
-            analyticsLoading
-              ? "..."
-              : analytics
-                ? String(
-                    analytics.total_recipients
-                  )
-                : "—"
-          }
-          hint={
-            analytics
-              ? "Campaign recipients"
-              : "Connect analytics data"
-          }
-          icon={icons.users}
-          iconBg="#3B8FF3"
-        />
-
-        <StatCard
-          label="Delivery Rate"
-          value={
-            analyticsLoading
-              ? "..."
-              : analytics
-                ? `${analytics.delivery_rate}%`
-                : "—"
-          }
-          hint={
-            analytics
-              ? `${analytics.failure_rate}% failure rate`
-              : "Connect analytics data"
-          }
-          icon={icons.shield}
-          iconBg="#F0942F"
-        />
-
-      </div>
-
-      {/* ======================================================
-          CAMPAIGN CHARTS
-         ====================================================== */}
-
-      <div className="mt-5 grid grid-cols-1 gap-4 lg:grid-cols-2">
-
-        {/* ----------------------------------------------------
-            CAMPAIGNS OVER TIME
-            ---------------------------------------------------- */}
-
-        <div className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
-
-          <p className="text-[14px] font-semibold text-slate-900">
-            Campaigns Over Time
-          </p>
-
-          <p className="text-[11.5px] text-slate-500">
-            Campaigns created during the
-            last 7 days
-          </p>
-
-          <div className="mt-4 h-[220px]">
-
-            <ResponsiveContainer
-              width="100%"
-              height="100%"
-            >
-
-              <LineChart
-                data={timelineData}
-                margin={{
-                  top: 5,
-                  right: 10,
-                  left: -20,
-                  bottom: 0,
-                }}
-              >
-
-                <CartesianGrid
-                  strokeDasharray="3 3"
-                  vertical={false}
-                  stroke="#F1F5F9"
-                />
-
-                <XAxis
-                  dataKey="label"
-                  tick={{
-                    fontSize: 11,
-                    fill: "#94A3B8",
-                  }}
-                  axisLine={false}
-                  tickLine={false}
-                />
-
-                <YAxis
-                  allowDecimals={false}
-                  tick={{
-                    fontSize: 11,
-                    fill: "#94A3B8",
-                  }}
-                  axisLine={false}
-                  tickLine={false}
-                />
-
-                <Tooltip />
-
-                <Line
-                  type="monotone"
-                  dataKey="count"
-                  stroke="#6C5CE7"
-                  strokeWidth={2.5}
-                  dot={{
-                    r: 3,
-                    fill: "#6C5CE7",
-                  }}
-                  activeDot={{
-                    r: 5,
-                  }}
-                />
-
-              </LineChart>
-
-            </ResponsiveContainer>
+            {error && (
+              <p className="mt-2 text-[11px] text-rose-500">
+                {error}
+              </p>
+            )}
 
           </div>
 
-          <p className="mt-2 text-[11px] text-slate-400">
-            Total created in this period:{" "}
-            {timelineData.reduce(
-              (sum, item) =>
-                sum + item.count,
-              0
-            )}
-          </p>
+
+          <button
+            type="button"
+            className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-200 bg-white shadow-sm"
+            aria-label={`Notifications for ${userEmail}`}
+          >
+            <Icon
+              path={
+                icons.bell
+              }
+              className="h-4 w-4 text-slate-500"
+            />
+          </button>
 
         </div>
 
-        {/* ----------------------------------------------------
-            CAMPAIGNS BY STATUS
-            ---------------------------------------------------- */}
 
-        <div className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
+        {/* STAT CARDS */}
 
-          <p className="text-[14px] font-semibold text-slate-900">
-            Campaigns by Status
-          </p>
+        <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
 
-          <p className="text-[11.5px] text-slate-500">
-            Current distribution of
-            campaigns
-          </p>
+          <StatCard
+            label="Total Campaigns"
+            value={
+              loading
+                ? "..."
+                : String(
+                    totalCampaigns
+                  )
+            }
+            hint="All time campaigns"
+            icon={
+              <Icon
+                path={
+                  icons.speaker
+                }
+                className="h-4 w-4"
+              />
+            }
+            iconBg="#6654E9"
+          />
 
-          <div className="mt-2 flex items-center gap-4">
 
-            <div className="relative h-[160px] w-[160px] flex-shrink-0">
+          <StatCard
+            label="Active Campaigns"
+            value={
+              loading
+                ? "..."
+                : String(
+                    activeCampaigns
+                  )
+            }
+            hint="Currently running"
+            icon={
+              <Icon
+                path={
+                  icons.layout
+                }
+                className="h-4 w-4"
+              />
+            }
+            iconBg="#10B981"
+          />
+
+
+          <StatCard
+            label="Total Users"
+            value={
+              loading
+                ? "..."
+                : String(
+                    totalAudience
+                  )
+            }
+            hint="Across all roles"
+            icon={
+              <Icon
+                path={
+                  icons.users
+                }
+                className="h-4 w-4"
+              />
+            }
+            iconBg="#338CF0"
+          />
+
+
+          <StatCard
+            label="Delivery Rate"
+            value={
+              loading
+                ? "..."
+                : `${deliveryRate}%`
+            }
+            hint={`${failureRate}% failure rate`}
+            icon={
+              <Icon
+                path={
+                  icons.shield
+                }
+                className="h-4 w-4"
+              />
+            }
+            iconBg="#F59E0B"
+          />
+
+        </div>
+
+
+        {/* CHARTS */}
+
+        <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-2">
+
+          {/* CAMPAIGNS OVER TIME */}
+
+          <div className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
+
+            <p className="text-[13.5px] font-semibold text-slate-900">
+              Campaigns Over Time
+            </p>
+
+            <p className="mt-1 text-[10.5px] text-slate-500">
+              Campaigns created during the last 7 days
+            </p>
+
+
+            <div className="mt-4 h-[220px]">
+
+              <ResponsiveContainer
+                width="100%"
+                height="100%"
+              >
+
+                <BarChart
+                  data={
+                    lastSevenDays
+                  }
+                >
+
+                  <CartesianGrid
+                    vertical={false}
+                    stroke="#EEF2F7"
+                  />
+
+                  <XAxis
+                    dataKey="label"
+                    axisLine={false}
+                    tickLine={false}
+                    tick={{
+                      fontSize: 10,
+                      fill: "#94A3B8",
+                    }}
+                  />
+
+                  <YAxis
+                    allowDecimals={false}
+                    axisLine={false}
+                    tickLine={false}
+                    tick={{
+                      fontSize: 9,
+                      fill: "#94A3B8",
+                    }}
+                  />
+
+                  <Tooltip />
+
+                  <Bar
+                    dataKey="count"
+                    fill="#6555E8"
+                    radius={[
+                      6,
+                      6,
+                      0,
+                      0,
+                    ]}
+                  />
+
+                </BarChart>
+
+              </ResponsiveContainer>
+
+            </div>
+
+
+            <p className="mt-2 text-[10px] text-slate-400">
+              Total created in this period:{" "}
+              {
+                lastSevenDays.reduce(
+                  (
+                    sum,
+                    item
+                  ) =>
+                    sum +
+                    item.count,
+                  0
+                )
+              }
+            </p>
+
+          </div>
+
+
+          {/* STATUS */}
+
+          <div className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
+
+            <p className="text-[13.5px] font-semibold text-slate-900">
+              Campaigns by Status
+            </p>
+
+            <p className="mt-1 text-[10.5px] text-slate-500">
+              Current distribution of campaigns
+            </p>
+
+
+            <div className="mt-3 h-[220px]">
 
               <ResponsiveContainer
                 width="100%"
@@ -779,116 +1097,898 @@ export default function Dashboard({
 
                   <Pie
                     data={
-                      hasCampaignData
-                        ? pieData
-                        : [
-                            {
-                              name: "None",
-                              value: 1,
-                              color:
-                                "#E2E8F0",
-                            },
-                          ]
+                      statusData
                     }
                     dataKey="value"
-                    innerRadius={48}
-                    outerRadius={72}
-                    paddingAngle={
-                      hasCampaignData
-                        ? 2
-                        : 0
+                    nameKey="name"
+                    innerRadius={
+                      55
                     }
-                    stroke="none"
+                    outerRadius={
+                      82
+                    }
+                    paddingAngle={2}
                   >
 
-                    {(
-                      hasCampaignData
-                        ? pieData
-                        : [
-                            {
-                              name: "None",
-                              value: 1,
-                              color:
-                                "#E2E8F0",
-                            },
-                          ]
-                    ).map(
-                      (entry, index) => (
+                    {statusData.map(
+                      (
+                        item,
+                        index
+                      ) => (
+
                         <Cell
-                          key={index}
+                          key={
+                            item.name
+                          }
                           fill={
-                            entry.color
+                            STATUS_COLORS[
+                              index
+                            ]
                           }
                         />
+
                       )
                     )}
 
                   </Pie>
 
+                  <Tooltip />
+
                 </PieChart>
 
               </ResponsiveContainer>
 
-              <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+            </div>
 
-                <p className="text-[20px] font-bold text-slate-900">
-                  {totalCampaigns}
+
+            <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+
+              {statusData.map(
+                (
+                  item,
+                  index
+                ) => (
+
+                  <div
+                    key={
+                      item.name
+                    }
+                    className="flex items-center justify-between"
+                  >
+
+                    <div className="flex items-center gap-2">
+
+                      <span
+                        className="h-2 w-2 rounded-full"
+                        style={{
+                          backgroundColor:
+                            STATUS_COLORS[
+                              index
+                            ],
+                        }}
+                      />
+
+                      <span className="text-[9.5px] text-slate-500">
+                        {
+                          item.name
+                        }
+                      </span>
+
+                    </div>
+
+
+                    <span className="text-[9.5px] font-semibold text-slate-500">
+
+                      {totalCampaigns >
+                      0
+                        ? Math.round(
+                            (item.value /
+                              totalCampaigns) *
+                              100
+                          )
+                        : 0}
+
+                      %
+
+                    </span>
+
+                  </div>
+
+                )
+              )}
+
+            </div>
+
+          </div>
+
+        </div>
+
+
+        {/* ANALYTICS */}
+
+        <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-[1.4fr_1fr]">
+
+          <div className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
+
+            <p className="text-[13.5px] font-semibold text-slate-900">
+              Platform Analytics
+            </p>
+
+            <p className="mt-1 text-[10.5px] text-slate-500">
+              Key metrics across the platform
+            </p>
+
+
+            <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+
+              <MiniCard
+                label="Total Users"
+                value={
+                  loading
+                    ? "..."
+                    : String(
+                        totalAudience
+                      )
+                }
+                hint="Audience members"
+                icon={
+                  <Icon
+                    path={
+                      icons.users
+                    }
+                    className="h-4 w-4 text-[#5A3FD6]"
+                  />
+                }
+                bg="#EDE9FE"
+              />
+
+
+              <MiniCard
+                label="Campaigns"
+                value={
+                  loading
+                    ? "..."
+                    : String(
+                        totalCampaigns
+                      )
+                }
+                hint="All time"
+                icon={
+                  <Icon
+                    path={
+                      icons.megaphone
+                    }
+                    className="h-4 w-4 text-emerald-600"
+                  />
+                }
+                bg="#ECFDF5"
+              />
+
+
+              <MiniCard
+                label="Messages Sent"
+                value={
+                  loading
+                    ? "..."
+                    : String(
+                        sent
+                      )
+                }
+                hint="Message delivery"
+                icon={
+                  <Icon
+                    path={
+                      icons.speaker
+                    }
+                    className="h-4 w-4 text-blue-600"
+                  />
+                }
+                bg="#EFF6FF"
+              />
+
+
+              <MiniCard
+                label="Avg. Delivery"
+                value={
+                  loading
+                    ? "..."
+                    : `${deliveryRate}%`
+                }
+                hint={`${failureRate}% failed`}
+                icon={
+                  <Icon
+                    path={
+                      icons.shield
+                    }
+                    className="h-4 w-4 text-amber-600"
+                  />
+                }
+                bg="#FFF7ED"
+              />
+
+            </div>
+
+          </div>
+
+
+          {/* RECENT ACTIVITY */}
+
+          <div className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
+
+            <p className="text-[13.5px] font-semibold text-slate-900">
+              Recent Activity
+            </p>
+
+            <p className="mt-1 text-[10.5px] text-slate-500">
+              Latest platform activities
+            </p>
+
+
+            <div className="mt-4 space-y-3">
+
+              {recentCampaigns.length ===
+              0 ? (
+
+                <p className="text-[11px] text-slate-400">
+                  No recent activity.
                 </p>
 
-                <p className="text-[10.5px] text-slate-400">
-                  Campaigns
+              ) : (
+
+                recentCampaigns.map(
+                  (
+                    campaign
+                  ) => (
+
+                    <button
+                      key={
+                        campaign.id
+                      }
+                      type="button"
+                      onClick={() =>
+                        navigate(
+                          "campaigns"
+                        )
+                      }
+                      className="flex w-full items-start gap-3 text-left"
+                    >
+
+                      <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-violet-50">
+
+                        <Icon
+                          path={
+                            icons.megaphone
+                          }
+                          className="h-3.5 w-3.5 text-violet-600"
+                        />
+
+                      </div>
+
+
+                      <div className="min-w-0 flex-1">
+
+                        <p className="truncate text-[10.5px] font-semibold text-slate-700">
+                          {
+                            campaign.title
+                          }
+                        </p>
+
+                        <p className="mt-0.5 truncate text-[9.5px] text-slate-400">
+                          Campaign status:{" "}
+                          {
+                            campaign.status
+                          }
+                        </p>
+
+                      </div>
+
+                    </button>
+
+                  )
+                )
+
+              )}
+
+            </div>
+
+
+            <button
+              type="button"
+              onClick={() =>
+                navigate(
+                  "campaigns"
+                )
+              }
+              className="mt-4 text-[9.5px] font-semibold text-[#5A3FD6]"
+            >
+              View all activity
+            </button>
+
+          </div>
+
+        </div>
+
+      </div>
+    );
+  }
+
+
+  /* ============================================================
+     MANAGER DASHBOARD
+     ============================================================ */
+
+  if (
+    userRole ===
+    "campaign_manager"
+  ) {
+
+    return (
+      <div className="flex-1 overflow-y-auto bg-slate-50 px-8 py-6">
+
+        {/* HEADER */}
+
+        <div>
+
+          <h1 className="text-[22px] font-bold text-slate-900">
+            Welcome back,{" "}
+            {greetingName} 👋
+          </h1>
+
+          <p className="mt-1 text-[12px] text-slate-500">
+            Here's what's happening with your campaigns.
+          </p>
+
+        </div>
+
+
+        {/* STAT CARDS */}
+
+        <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
+
+          <StatCard
+            label="My Campaigns"
+            value={
+              loading
+                ? "..."
+                : String(
+                    totalCampaigns
+                  )
+            }
+            hint="Total campaigns"
+            icon={
+              <Icon
+                path={
+                  icons.megaphone
+                }
+                className="h-4 w-4"
+              />
+            }
+            iconBg="#6654E9"
+          />
+
+
+          <StatCard
+            label="Active Campaigns"
+            value={
+              loading
+                ? "..."
+                : String(
+                    activeCampaigns
+                  )
+            }
+            hint="Currently running"
+            icon={
+              <Icon
+                path={
+                  icons.layout
+                }
+                className="h-4 w-4"
+              />
+            }
+            iconBg="#10B981"
+          />
+
+
+          <StatCard
+            label="Pending Review"
+            value={
+              loading
+                ? "..."
+                : String(
+                    pendingReview
+                  )
+            }
+            hint="Awaiting your review"
+            hintClassName="text-amber-600"
+            icon={
+              <Icon
+                path={
+                  icons.clock
+                }
+                className="h-4 w-4"
+              />
+            }
+            iconBg="#F59E0B"
+          />
+
+
+          <StatCard
+            label="Avg. Delivery Rate"
+            value={
+              loading
+                ? "..."
+                : `${deliveryRate}%`
+            }
+            hint="Current delivery rate"
+            icon={
+              <Icon
+                path={
+                  icons.chart
+                }
+                className="h-4 w-4"
+              />
+            }
+            iconBg="#338CF0"
+          />
+
+
+          {/* IMPORTANT:
+             This now uses actual Manager team members,
+             NOT audience.length.
+          */}
+
+          <StatCard
+            label="Team Members"
+            value={
+              loading
+                ? "..."
+                : String(
+                    teamMemberCount
+                  )
+            }
+            hint={
+              teamMemberCount === 1
+                ? "1 member assigned"
+                : `${teamMemberCount} members assigned`
+            }
+            icon={
+              <Icon
+                path={
+                  icons.users
+                }
+                className="h-4 w-4"
+              />
+            }
+            iconBg="#8B5CF6"
+          />
+
+        </div>
+
+
+        {/* PERFORMANCE + STATUS */}
+
+        <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-2">
+
+          {/* PERFORMANCE */}
+
+          <div className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
+
+            <div className="flex items-start justify-between">
+
+              <div>
+
+                <p className="text-[13.5px] font-semibold text-slate-900">
+                  Campaigns Performance
+                </p>
+
+                <p className="mt-1 text-[10.5px] text-slate-500">
+                  Overview of your campaign performance
                 </p>
 
               </div>
 
+
+              <select className="rounded-lg border border-slate-200 px-2 py-1.5 text-[9px] text-slate-500">
+
+                <option>
+                  Last 7 Days
+                </option>
+
+                <option>
+                  Last 30 Days
+                </option>
+
+              </select>
+
             </div>
 
-            <div className="flex-1 space-y-2">
 
-              {STATUS_BUCKETS.map(
-                (bucket) => {
-                  const count =
-                    statusCounts[
-                      bucket.key
-                    ];
+            <div className="mt-4 h-[220px]">
 
-                  const percentage =
-                    totalCampaigns >
-                    0
-                      ? Math.round(
-                          (count /
-                            totalCampaigns) *
-                            100
-                        )
-                      : 0;
+              <ResponsiveContainer
+                width="100%"
+                height="100%"
+              >
 
-                  return (
-                    <div
-                      key={bucket.key}
-                      className="flex items-center justify-between text-[12px]"
-                    >
+                <BarChart
+                  data={
+                    lastSevenDays
+                  }
+                >
 
-                      <span className="flex items-center gap-2 text-slate-600">
+                  <CartesianGrid
+                    vertical={false}
+                    stroke="#EEF2F7"
+                  />
 
-                        <span
-                          className="h-2 w-2 rounded-full"
-                          style={{
-                            backgroundColor:
-                              bucket.color,
-                          }}
+                  <XAxis
+                    dataKey="label"
+                    axisLine={false}
+                    tickLine={false}
+                    tick={{
+                      fontSize: 10,
+                      fill: "#94A3B8",
+                    }}
+                  />
+
+                  <YAxis
+                    allowDecimals={false}
+                    axisLine={false}
+                    tickLine={false}
+                    tick={{
+                      fontSize: 9,
+                      fill: "#94A3B8",
+                    }}
+                  />
+
+                  <Tooltip />
+
+                  <Bar
+                    dataKey="count"
+                    fill="#6555E8"
+                    radius={[
+                      6,
+                      6,
+                      0,
+                      0,
+                    ]}
+                  />
+
+                </BarChart>
+
+              </ResponsiveContainer>
+
+            </div>
+
+          </div>
+
+
+          {/* STATUS */}
+
+          <div className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
+
+            <p className="text-[13.5px] font-semibold text-slate-900">
+              Campaigns by Status
+            </p>
+
+            <p className="mt-1 text-[10.5px] text-slate-500">
+              Distribution for your campaigns
+            </p>
+
+
+            <div className="mt-3 h-[220px]">
+
+              <ResponsiveContainer
+                width="100%"
+                height="100%"
+              >
+
+                <PieChart>
+
+                  <Pie
+                    data={
+                      statusData
+                    }
+                    dataKey="value"
+                    nameKey="name"
+                    innerRadius={
+                      52
+                    }
+                    outerRadius={
+                      78
+                    }
+                    paddingAngle={2}
+                  >
+
+                    {statusData.map(
+                      (
+                        item,
+                        index
+                      ) => (
+
+                        <Cell
+                          key={
+                            item.name
+                          }
+                          fill={
+                            STATUS_COLORS[
+                              index
+                            ]
+                          }
                         />
 
-                        {bucket.label}
+                      )
+                    )}
 
-                      </span>
+                  </Pie>
 
-                      <span className="font-medium text-slate-500">
-                        {percentage}%
-                      </span>
+                  <Tooltip />
 
-                    </div>
-                  );
+                </PieChart>
+
+              </ResponsiveContainer>
+
+            </div>
+
+          </div>
+
+        </div>
+
+
+        {/* MY CAMPAIGNS + TEAM OVERVIEW */}
+
+        <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-[1.4fr_1fr]">
+
+          {/* MY CAMPAIGNS */}
+
+          <div className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
+
+            <div className="flex items-center justify-between">
+
+              <div>
+
+                <p className="text-[13.5px] font-semibold text-slate-900">
+                  My Campaigns
+                </p>
+
+                <p className="mt-1 text-[10.5px] text-slate-500">
+                  Your recent campaigns
+                </p>
+
+              </div>
+
+
+              <button
+                type="button"
+                onClick={() =>
+                  navigate(
+                    "campaigns"
+                  )
                 }
+                className="rounded-lg bg-[#6654E9] px-3 py-1.5 text-[9.5px] font-semibold text-white"
+              >
+                View All
+              </button>
+
+            </div>
+
+
+            <div className="mt-4 divide-y divide-slate-100">
+
+              {recentCampaigns.length ===
+              0 ? (
+
+                <p className="py-6 text-center text-[11px] text-slate-400">
+                  No campaigns available.
+                </p>
+
+              ) : (
+
+                recentCampaigns.map(
+                  (
+                    campaign
+                  ) => (
+
+                    <button
+                      key={
+                        campaign.id
+                      }
+                      type="button"
+                      onClick={() =>
+                        navigate(
+                          "campaigns"
+                        )
+                      }
+                      className="grid w-full grid-cols-[1.5fr_.7fr_.8fr_.6fr] items-center gap-3 py-3 text-left"
+                    >
+
+                      <span className="truncate text-[10.5px] font-semibold text-slate-700">
+                        {
+                          campaign.title
+                        }
+                      </span>
+
+
+                      <span className="truncate text-[9px] capitalize text-slate-500">
+                        {
+                          campaign.type
+                        }
+                      </span>
+
+
+                      <span className="truncate text-[9px] capitalize text-slate-500">
+                        {
+                          campaign.status
+                        }
+                      </span>
+
+
+                      <span className="text-right text-[9px] text-slate-400">
+
+                        {campaign.created_at
+                          ? new Date(
+                              campaign.created_at
+                            ).toLocaleDateString(
+                              "en-US",
+                              {
+                                month:
+                                  "short",
+
+                                day:
+                                  "numeric",
+                              }
+                            )
+                          : "—"}
+
+                      </span>
+
+                    </button>
+
+                  )
+                )
+
+              )}
+
+            </div>
+
+          </div>
+
+
+          {/* TEAM OVERVIEW */}
+
+          <div className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
+
+            <div className="flex items-center justify-between">
+
+              <div>
+
+                <p className="text-[13.5px] font-semibold text-slate-900">
+                  Team Overview
+                </p>
+
+                <p className="mt-1 text-[10.5px] text-slate-500">
+                  Campaign Persons assigned to you
+                </p>
+
+              </div>
+
+
+              {teamMemberCount >
+                0 && (
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    navigate(
+                      "teamMembers"
+                    )
+                  }
+                  className="text-[9.5px] font-semibold text-[#5A3FD6]"
+                >
+                  View All
+                </button>
+
+              )}
+
+            </div>
+
+
+            <div className="mt-4 space-y-3">
+
+              {teamMembers.length ===
+              0 ? (
+
+                <div className="py-6 text-center">
+
+                  <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-violet-50">
+
+                    <Icon
+                      path={
+                        icons.users
+                      }
+                      className="h-5 w-5 text-violet-500"
+                    />
+
+                  </div>
+
+                  <p className="mt-3 text-[11px] font-medium text-slate-600">
+                    No team members assigned
+                  </p>
+
+                  <p className="mt-1 text-[9px] text-slate-400">
+                    Assign Campaign Persons from Team Members.
+                  </p>
+
+                </div>
+
+              ) : (
+
+                teamMembers
+                  .slice(
+                    0,
+                    4
+                  )
+                  .map(
+                    (
+                      member
+                    ) => (
+
+                      <div
+                        key={
+                          member.id
+                        }
+                        className="flex items-center gap-3"
+                      >
+
+                        <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-violet-100 text-[11px] font-bold text-violet-700">
+
+                          {(
+                            member.name ??
+                            member.email
+                          )
+                            .charAt(
+                              0
+                            )
+                            .toUpperCase()}
+
+                        </div>
+
+
+                        <div className="min-w-0 flex-1">
+
+                          <p className="truncate text-[10px] font-semibold text-slate-700">
+                            {
+                              member.name ??
+                              "Campaign Person"
+                            }
+                          </p>
+
+                          <p className="truncate text-[8.5px] text-slate-400">
+                            {
+                              member.email
+                            }
+                          </p>
+
+                        </div>
+
+
+                        <span
+                          className={
+                            member.is_active
+                              ? "rounded-full bg-emerald-50 px-2 py-1 text-[8px] font-semibold text-emerald-600"
+                              : "rounded-full bg-slate-100 px-2 py-1 text-[8px] font-semibold text-slate-500"
+                          }
+                        >
+                          {member.is_active
+                            ? "Active"
+                            : "Inactive"}
+                        </span>
+
+                      </div>
+
+                    )
+                  )
+
               )}
 
             </div>
@@ -898,398 +1998,563 @@ export default function Dashboard({
         </div>
 
       </div>
+    );
+  }
 
-      {/* ======================================================
-          DELIVERY PERFORMANCE
-         ====================================================== */}
 
-      <div className="mt-5 rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
+  /* ============================================================
+     CAMPAIGN PERSON DASHBOARD
+     ============================================================ */
 
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+  return (
+    <div className="flex-1 overflow-y-auto bg-slate-50 px-8 py-6">
 
-          <div>
+      {/* HEADER */}
 
-            <p className="text-[14px] font-semibold text-slate-900">
-              Campaign Delivery Performance
-            </p>
+      <div>
 
-            <p className="text-[11.5px] text-slate-500">
-              Delivery statistics from the
-              analytics service.
-            </p>
+        <h1 className="text-[22px] font-bold text-slate-900">
+          Welcome back,{" "}
+          {greetingName} 👋
+        </h1>
+
+        <p className="mt-1 text-[12px] text-slate-500">
+          Here's your workspace for today.
+        </p>
+
+      </div>
+
+
+      {/* STAT CARDS */}
+
+      <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
+
+        <StatCard
+          label="My Assignments"
+          value={
+            loading
+              ? "..."
+              : String(
+                  campaigns.length
+                )
+          }
+          hint="Total tasks"
+          icon={
+            <Icon
+              path={
+                icons.layout
+              }
+              className="h-4 w-4"
+            />
+          }
+          iconBg="#6654E9"
+        />
+
+
+        <StatCard
+          label="Pending Tasks"
+          value={
+            loading
+              ? "..."
+              : String(
+                  pendingReview
+                )
+          }
+          hint="Need your attention"
+          hintClassName="text-amber-600"
+          icon={
+            <Icon
+              path={
+                icons.clock
+              }
+              className="h-4 w-4"
+            />
+          }
+          iconBg="#F59E0B"
+        />
+
+
+        <StatCard
+          label="In Progress"
+          value={
+            loading
+              ? "..."
+              : String(
+                  activeCampaigns
+                )
+          }
+          hint="Tasks you're working on"
+          icon={
+            <Icon
+              path={
+                icons.chart
+              }
+              className="h-4 w-4"
+            />
+          }
+          iconBg="#338CF0"
+        />
+
+
+        <StatCard
+          label="Submitted"
+          value={
+            loading
+              ? "..."
+              : String(
+                  sent
+                )
+          }
+          hint="Messages sent"
+          icon={
+            <Icon
+              path={
+                icons.megaphone
+              }
+              className="h-4 w-4"
+            />
+          }
+          iconBg="#10B981"
+        />
+
+
+        <StatCard
+          label="Approved"
+          value={
+            loading
+              ? "..."
+              : String(
+                  delivered
+                )
+          }
+          hint="Delivered"
+          icon={
+            <Icon
+              path={
+                icons.shield
+              }
+              className="h-4 w-4"
+            />
+          }
+          iconBg="#10B981"
+        />
+
+      </div>
+
+
+      {/* TASKS / STATUS / ACTIVITY */}
+
+      <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-[1.4fr_.9fr_.9fr]">
+
+        {/* MY TASKS */}
+
+        <div className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
+
+          <div className="flex items-center justify-between">
+
+            <div>
+
+              <p className="text-[13.5px] font-semibold text-slate-900">
+                My Tasks
+              </p>
+
+              <p className="mt-1 text-[10.5px] text-slate-500">
+                Your assigned tasks
+              </p>
+
+            </div>
+
+
+            <button
+              type="button"
+              onClick={() =>
+                navigate(
+                  "campaigns"
+                )
+              }
+              className="text-[9.5px] font-semibold text-[#5A3FD6]"
+            >
+              View All
+            </button>
 
           </div>
 
-          {!analyticsLoading &&
-            analytics && (
-              <div className="flex items-center gap-2">
 
-                <div className="rounded-full bg-emerald-50 px-3 py-1 text-[11.5px] font-semibold text-emerald-600">
-                  {deliveryRate}% Delivered
-                </div>
+          <div className="mt-4 space-y-3">
 
-                <div className="rounded-full bg-rose-50 px-3 py-1 text-[11.5px] font-semibold text-rose-600">
-                  {failureRate}% Failed
-                </div>
+            {recentCampaigns.length ===
+            0 ? (
 
-              </div>
+              <p className="py-8 text-center text-[11px] text-slate-400">
+                No assigned tasks.
+              </p>
+
+            ) : (
+
+              recentCampaigns.map(
+                (
+                  campaign
+                ) => (
+
+                  <button
+                    key={
+                      campaign.id
+                    }
+                    type="button"
+                    onClick={() =>
+                      navigate(
+                        "campaigns"
+                      )
+                    }
+                    className="flex w-full items-center gap-3 rounded-xl border border-slate-100 p-3 text-left hover:bg-slate-50"
+                  >
+
+                    <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-50">
+
+                      <Icon
+                        path={
+                          icons.layout
+                        }
+                        className="h-3.5 w-3.5 text-violet-600"
+                      />
+
+                    </div>
+
+
+                    <div className="min-w-0 flex-1">
+
+                      <p className="truncate text-[10.5px] font-semibold text-slate-700">
+                        {
+                          campaign.title
+                        }
+                      </p>
+
+                      <p className="mt-0.5 text-[9px] text-slate-400">
+                        {
+                          campaign.status
+                        }
+                      </p>
+
+                    </div>
+
+                  </button>
+
+                )
+              )
+
             )}
+
+          </div>
 
         </div>
 
-        {deliveryError && (
-          <p className="mt-3 text-[12px] text-rose-500">
-            {deliveryError}
-          </p>
-        )}
 
-        {/* ----------------------------------------------------
-            DELIVERY SUMMARY CARDS
-            ---------------------------------------------------- */}
+        {/* TASKS BY STATUS */}
+
+        <div className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
+
+          <p className="text-[13.5px] font-semibold text-slate-900">
+            Tasks by Status
+          </p>
+
+          <p className="mt-1 text-[10.5px] text-slate-500">
+            Overview of your task status
+          </p>
+
+
+          <div className="mt-4 h-[190px]">
+
+            <ResponsiveContainer
+              width="100%"
+              height="100%"
+            >
+
+              <PieChart>
+
+                <Pie
+                  data={
+                    statusData
+                  }
+                  dataKey="value"
+                  nameKey="name"
+                  innerRadius={
+                    48
+                  }
+                  outerRadius={
+                    70
+                  }
+                  paddingAngle={2}
+                >
+
+                  {statusData.map(
+                    (
+                      item,
+                      index
+                    ) => (
+
+                      <Cell
+                        key={
+                          item.name
+                        }
+                        fill={
+                          STATUS_COLORS[
+                            index
+                          ]
+                        }
+                      />
+
+                    )
+                  )}
+
+                </Pie>
+
+                <Tooltip />
+
+              </PieChart>
+
+            </ResponsiveContainer>
+
+          </div>
+
+        </div>
+
+
+        {/* RECENT ACTIVITY */}
+
+        <div className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
+
+          <p className="text-[13.5px] font-semibold text-slate-900">
+            Recent Activity
+          </p>
+
+          <p className="mt-1 text-[10.5px] text-slate-500">
+            Your recent activities
+          </p>
+
+
+          <div className="mt-4 space-y-3">
+
+            {recentCampaigns
+              .slice(
+                0,
+                4
+              )
+              .map(
+                (
+                  campaign
+                ) => (
+
+                  <div
+                    key={
+                      campaign.id
+                    }
+                    className="flex items-start gap-3"
+                  >
+
+                    <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-violet-50">
+
+                      <Icon
+                        path={
+                          icons.chart
+                        }
+                        className="h-3.5 w-3.5 text-violet-600"
+                      />
+
+                    </div>
+
+
+                    <div className="min-w-0">
+
+                      <p className="truncate text-[10px] font-semibold text-slate-700">
+                        {
+                          campaign.title
+                        }
+                      </p>
+
+                      <p className="truncate text-[9px] text-slate-400">
+                        Status:{" "}
+                        {
+                          campaign.status
+                        }
+                      </p>
+
+                    </div>
+
+                  </div>
+
+                )
+              )}
+
+          </div>
+
+        </div>
+
+      </div>
+
+
+      {/* QUICK ACTIONS */}
+
+      <div className="mt-4 rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
+
+        <p className="text-[13.5px] font-semibold text-slate-900">
+          Quick Actions
+        </p>
+
+        <p className="mt-1 text-[10.5px] text-slate-500">
+          Common actions to help you work faster.
+        </p>
+
 
         <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-5">
 
-          <DeliveryStatCard
-            label="Total"
-            value={
-              analyticsLoading
-                ? 0
-                : deliveryTotals.total
+          {/* GENERATE CONTENT */}
+
+          <button
+            type="button"
+            onClick={() =>
+              navigate(
+                "aiStudio"
+              )
             }
-            description="Total deliveries"
-          />
-
-          <DeliveryStatCard
-            label="Sent"
-            value={
-              analyticsLoading
-                ? 0
-                : deliveryTotals.sent
-            }
-            description="Messages sent"
-          />
-
-          <DeliveryStatCard
-            label="Delivered"
-            value={
-              analyticsLoading
-                ? 0
-                : deliveryTotals.delivered
-            }
-            description="Successfully delivered"
-          />
-
-          <DeliveryStatCard
-            label="Pending"
-            value={
-              analyticsLoading
-                ? 0
-                : deliveryTotals.pending
-            }
-            description="Waiting to send"
-          />
-
-          <DeliveryStatCard
-            label="Failed"
-            value={
-              analyticsLoading
-                ? 0
-                : deliveryTotals.failed
-            }
-            description="Delivery failures"
-          />
-
-        </div>
-
-        {/* ----------------------------------------------------
-            CAMPAIGN DELIVERY TABLE
-            ---------------------------------------------------- */}
-
-        <div className="mt-5 overflow-x-auto">
-
-          {deliveryLoading ? (
-
-            <div className="rounded-xl bg-slate-50 p-6 text-center text-[12px] text-slate-500">
-              Loading campaign delivery
-              performance...
-            </div>
-
-          ) : campaignDelivery.length ===
-            0 ? (
-
-            <div className="rounded-xl bg-slate-50 p-6 text-center text-[12px] text-slate-500">
-              No campaign delivery
-              records available.
-            </div>
-
-          ) : (
-
-            <table className="w-full min-w-[720px] border-collapse">
-
-              <thead>
-
-                <tr className="border-b border-slate-100 text-left">
-
-                  <th className="px-3 py-3 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
-                    Campaign
-                  </th>
-
-                  <th className="px-3 py-3 text-center text-[11px] font-semibold uppercase tracking-wide text-slate-400">
-                    Total
-                  </th>
-
-                  <th className="px-3 py-3 text-center text-[11px] font-semibold uppercase tracking-wide text-slate-400">
-                    Sent
-                  </th>
-
-                  <th className="px-3 py-3 text-center text-[11px] font-semibold uppercase tracking-wide text-slate-400">
-                    Delivered
-                  </th>
-
-                  <th className="px-3 py-3 text-center text-[11px] font-semibold uppercase tracking-wide text-slate-400">
-                    Pending
-                  </th>
-
-                  <th className="px-3 py-3 text-center text-[11px] font-semibold uppercase tracking-wide text-slate-400">
-                    Failed
-                  </th>
-
-                  <th className="px-3 py-3 text-center text-[11px] font-semibold uppercase tracking-wide text-slate-400">
-                    Rate
-                  </th>
-
-                </tr>
-
-              </thead>
-
-              <tbody>
-
-                {campaignDelivery.map(
-                  (delivery) => {
-
-                    const rate =
-                      delivery.total >
-                      0
-                        ? Math.round(
-                            (delivery.delivered /
-                              delivery.total) *
-                              100
-                          )
-                        : 0;
-
-                    return (
-
-                      <tr
-                        key={
-                          delivery.campaign_id
-                        }
-                        className="border-b border-slate-50 last:border-0"
-                      >
-
-                        <td className="px-3 py-3">
-
-                          <p className="max-w-[240px] truncate text-[12.5px] font-semibold text-slate-700">
-                            {
-                              delivery.campaign_title
-                            }
-                          </p>
-
-                          <p className="mt-0.5 text-[10px] text-slate-400">
-                            {
-                              delivery.campaign_id
-                            }
-                          </p>
-
-                        </td>
-
-                        <td className="px-3 py-3 text-center text-[12px] font-medium text-slate-600">
-                          {delivery.total}
-                        </td>
-
-                        <td className="px-3 py-3 text-center text-[12px] font-medium text-slate-600">
-                          {delivery.sent}
-                        </td>
-
-                        <td className="px-3 py-3 text-center">
-
-                          <span className="inline-flex min-w-[32px] items-center justify-center rounded-full bg-emerald-50 px-2 py-1 text-[11px] font-semibold text-emerald-600">
-                            {
-                              delivery.delivered
-                            }
-                          </span>
-
-                        </td>
-
-                        <td className="px-3 py-3 text-center">
-
-                          <span className="inline-flex min-w-[32px] items-center justify-center rounded-full bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-600">
-                            {
-                              delivery.pending
-                            }
-                          </span>
-
-                        </td>
-
-                        <td className="px-3 py-3 text-center">
-
-                          <span className="inline-flex min-w-[32px] items-center justify-center rounded-full bg-rose-50 px-2 py-1 text-[11px] font-semibold text-rose-600">
-                            {
-                              delivery.failed
-                            }
-                          </span>
-
-                        </td>
-
-                        <td className="px-3 py-3 text-center">
-
-                          <span className="text-[12px] font-semibold text-slate-700">
-                            {rate}%
-                          </span>
-
-                        </td>
-
-                      </tr>
-
-                    );
-                  }
-                )}
-
-              </tbody>
-
-            </table>
-
-          )}
-
-        </div>
-
-      </div>
-
-      {/* ======================================================
-          ENGAGEMENT SUMMARY
-         ====================================================== */}
-
-      <div className="mt-5 rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
-
-        <div>
-
-          <p className="text-[14px] font-semibold text-slate-900">
-            Engagement Summary
-          </p>
-
-          <p className="text-[11.5px] text-slate-500">
-            Engagement events recorded across
-            all campaigns.
-          </p>
-
-        </div>
-
-        <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-
-          <DeliveryStatCard
-            label="Opens"
-            value={
-              analytics?.opens ?? 0
-            }
-            description={
-              analytics
-                ? `${analytics.open_rate}% open rate`
-                : "No analytics"
-            }
-          />
-
-          <DeliveryStatCard
-            label="Clicks"
-            value={
-              analytics?.clicks ?? 0
-            }
-            description={
-              analytics
-                ? `${analytics.click_through_rate}% click rate`
-                : "No analytics"
-            }
-          />
-
-          <DeliveryStatCard
-            label="Responses"
-            value={
-              analytics?.responses ?? 0
-            }
-            description={
-              analytics
-                ? `${analytics.response_rate}% response rate`
-                : "No analytics"
-            }
-          />
-
-          <DeliveryStatCard
-            label="Participation"
-            value={
-              analytics?.participation ?? 0
-            }
-            description={
-              analytics
-                ? `${analytics.participation_rate}% participation`
-                : "No analytics"
-            }
-          />
-
-        </div>
-
-      </div>
-
-      {/* ======================================================
-          CAMPAIGN OVERVIEW
-         ====================================================== */}
-
-      <div className="mt-5 rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
-
-        <div className="flex items-center justify-between">
-
-          <div>
-
-            <p className="text-[14px] font-semibold text-slate-900">
-              Campaign Overview
+            className="rounded-xl border border-slate-100 p-3 text-left hover:bg-slate-50"
+          >
+
+            <Icon
+              path={
+                icons.sparkle
+              }
+              className="h-4 w-4 text-violet-600"
+            />
+
+            <p className="mt-2 text-[10px] font-semibold text-slate-700">
+              Generate Content
             </p>
 
-            <p className="text-[11.5px] text-slate-500">
-              Current campaign activity from
-              your platform.
+            <p className="mt-0.5 text-[8.5px] text-slate-400">
+              Create AI content
             </p>
 
-          </div>
+          </button>
 
-          <span className="rounded-full bg-[#EDE9FE] px-3 py-1 text-[11.5px] font-semibold text-[#5A3FD6]">
-            {totalCampaigns} Total
-          </span>
 
-        </div>
+          {/* TRANSLATE CONTENT */}
 
-        <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+          <button
+            type="button"
+            onClick={() =>
+              navigate(
+                "translations"
+              )
+            }
+            className="rounded-xl border border-slate-100 p-3 text-left hover:bg-slate-50"
+          >
 
-          {STATUS_BUCKETS.map(
-            (bucket) => (
+            <Icon
+              path={
+                icons.globe
+              }
+              className="h-4 w-4 text-emerald-600"
+            />
 
-              <div
-                key={bucket.key}
-                className="rounded-xl bg-slate-50 p-3.5"
-              >
+            <p className="mt-2 text-[10px] font-semibold text-slate-700">
+              Translate Content
+            </p>
 
-                <p className="text-[11.5px] text-slate-500">
-                  {bucket.label}
-                </p>
+            <p className="mt-0.5 text-[8.5px] text-slate-400">
+              Multi-language translation
+            </p>
 
-                <p className="mt-1 text-[20px] font-bold text-slate-900">
-                  {
-                    statusCounts[
-                      bucket.key
-                    ]
-                  }
-                </p>
+          </button>
 
-              </div>
 
-            )
-          )}
+          {/* TONE CHECK */}
+
+          <button
+            type="button"
+            onClick={() =>
+              navigate(
+                "review"
+              )
+            }
+            className="rounded-xl border border-slate-100 p-3 text-left hover:bg-slate-50"
+          >
+
+            <Icon
+              path={
+                icons.clock
+              }
+              className="h-4 w-4 text-orange-500"
+            />
+
+            <p className="mt-2 text-[10px] font-semibold text-slate-700">
+              Tone Check
+            </p>
+
+            <p className="mt-0.5 text-[8.5px] text-slate-400">
+              Check content tone
+            </p>
+
+          </button>
+
+
+          {/* COMPLIANCE */}
+
+          <button
+            type="button"
+            onClick={() =>
+              navigate(
+                "compliance"
+              )
+            }
+            className="rounded-xl border border-slate-100 p-3 text-left hover:bg-slate-50"
+          >
+
+            <Icon
+              path={
+                icons.shield
+              }
+              className="h-4 w-4 text-rose-500"
+            />
+
+            <p className="mt-2 text-[10px] font-semibold text-slate-700">
+              Compliance Check
+            </p>
+
+            <p className="mt-0.5 text-[8.5px] text-slate-400">
+              Verify compliance
+            </p>
+
+          </button>
+
+
+          {/* TEMPLATES */}
+
+          <button
+            type="button"
+            onClick={() =>
+              navigate(
+                "templates"
+              )
+            }
+            className="rounded-xl border border-slate-100 p-3 text-left hover:bg-slate-50"
+          >
+
+            <Icon
+              path={
+                icons.layout
+              }
+              className="h-4 w-4 text-violet-600"
+            />
+
+            <p className="mt-2 text-[10px] font-semibold text-slate-700">
+              View Templates
+            </p>
+
+            <p className="mt-0.5 text-[8.5px] text-slate-400">
+              Browse templates
+            </p>
+
+          </button>
 
         </div>
 

@@ -8,7 +8,11 @@ from fastapi import (
     Query,
     Request,
 )
-from fastapi.responses import Response, RedirectResponse
+
+from fastapi.responses import (
+    Response,
+    RedirectResponse,
+)
 
 from sqlalchemy import select
 
@@ -16,7 +20,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 
-from app.models.campaign import Campaign
+from app.models.campaign import (
+    Campaign,
+)
 
 from app.models.campaign_recipient import (
     CampaignRecipient,
@@ -64,8 +70,32 @@ router = APIRouter(
 
 
 # ============================================================
+# HELPERS
+# ============================================================
+
+
+def enum_value(value):
+    """
+    Safely return an enum value.
+
+    Supports both:
+        Enum instances
+        plain strings
+
+    This is useful because database backends can sometimes
+    return enum values differently.
+    """
+
+    if hasattr(value, "value"):
+        return value.value
+
+    return value
+
+
+# ============================================================
 # LOAD DELIVERY
 # ============================================================
+
 
 async def load_delivery(
     delivery_id: UUID,
@@ -94,6 +124,7 @@ async def load_delivery(
 # LOAD CAMPAIGN RECIPIENT
 # ============================================================
 
+
 async def load_campaign_recipient(
     delivery: MessageDelivery,
     db: AsyncSession,
@@ -121,6 +152,7 @@ async def load_campaign_recipient(
 # ============================================================
 # LOAD AUDIENCE MEMBER
 # ============================================================
+
 
 async def load_audience_member(
     recipient: CampaignRecipient,
@@ -152,6 +184,7 @@ async def load_audience_member(
 # LOAD CAMPAIGN
 # ============================================================
 
+
 async def load_campaign(
     campaign_id: UUID,
     db: AsyncSession,
@@ -178,6 +211,7 @@ async def load_campaign(
 # ============================================================
 # UPDATE DELIVERY STATUS
 # ============================================================
+
 
 @router.post(
     "/{delivery_id}/status"
@@ -241,7 +275,9 @@ async def change_delivery_status(
             delivery.id
         ),
         "channel": delivery.channel,
-        "status": delivery.status.value,
+        "status": enum_value(
+            delivery.status
+        ),
         "sent_at": delivery.sent_at,
         "delivered_at": delivery.delivered_at,
         "failed_at": delivery.failed_at,
@@ -253,6 +289,7 @@ async def change_delivery_status(
 # ============================================================
 # RECORD ENGAGEMENT
 # ============================================================
+
 
 @router.post(
     "/{delivery_id}/engagement"
@@ -309,8 +346,8 @@ async def create_engagement_event(
         "delivery_id": str(
             delivery.id
         ),
-        "event_type": (
-            event.event_type.value
+        "event_type": enum_value(
+            event.event_type
         ),
         "event_at": event.event_at,
     }
@@ -319,6 +356,7 @@ async def create_engagement_event(
 # ============================================================
 # OPEN TRACKING PIXEL
 # ============================================================
+
 
 @router.get(
     "/{delivery_id}/open"
@@ -381,7 +419,10 @@ async def track_open(
         content=pixel,
         media_type="image/gif",
         headers={
-            "Cache-Control": "no-store, no-cache, must-revalidate",
+            "Cache-Control": (
+                "no-store, no-cache, "
+                "must-revalidate"
+            ),
         },
     )
 
@@ -389,6 +430,7 @@ async def track_open(
 # ============================================================
 # CLICK TRACKING
 # ============================================================
+
 
 @router.get(
     "/{delivery_id}/click"
@@ -462,6 +504,7 @@ async def track_click(
 # ============================================================
 # RETRY FAILED DELIVERY
 # ============================================================
+
 
 @router.post(
     "/{delivery_id}/retry"
@@ -580,8 +623,9 @@ async def retry_delivery(
     # PREPARE RETRY
     # ========================================================
 
-    prepare_delivery_retry(
-        delivery
+    await prepare_delivery_retry(
+        db=db,
+        delivery=delivery,
     )
 
     delivery.status = (
@@ -649,7 +693,9 @@ async def retry_delivery(
             delivery.id
         ),
         "channel": delivery.channel,
-        "status": delivery.status.value,
+        "status": enum_value(
+            delivery.status
+        ),
         "retry_count": delivery.retry_count,
         "max_retries": delivery.max_retries,
         "message_id": result.message_id,
@@ -660,6 +706,7 @@ async def retry_delivery(
 # ============================================================
 # CAMPAIGN DASHBOARD
 # ============================================================
+
 
 @router.get(
     "/campaign/{campaign_id}/dashboard"
@@ -741,19 +788,29 @@ async def campaign_dashboard(
 
     for delivery in deliveries:
 
-        status = delivery.status.value
+        status = enum_value(
+            delivery.status
+        )
 
         if status == "pending":
+
             pending += 1
 
         elif status == "sent":
+
             sent += 1
 
         elif status == "delivered":
+
             delivered += 1
 
         elif status == "failed":
+
             failed += 1
+
+        elif status == "retrying":
+
+            retrying += 1
 
     # ========================================================
     # RETRY COUNT
@@ -763,7 +820,7 @@ async def campaign_dashboard(
         1
         for delivery in deliveries
         if delivery.retry_count > 0
-        and delivery.status.value
+        and enum_value(delivery.status)
         == "failed"
         and delivery.retry_count
         < delivery.max_retries
@@ -776,29 +833,37 @@ async def campaign_dashboard(
     opens = sum(
         1
         for event in events
-        if event.event_type
-        == EngagementType.OPEN
+        if enum_value(
+            event.event_type
+        )
+        == "open"
     )
 
     clicks = sum(
         1
         for event in events
-        if event.event_type
-        == EngagementType.CLICK
+        if enum_value(
+            event.event_type
+        )
+        == "click"
     )
 
     responses = sum(
         1
         for event in events
-        if event.event_type
-        == EngagementType.RESPONSE
+        if enum_value(
+            event.event_type
+        )
+        == "response"
     )
 
     participation = sum(
         1
         for event in events
-        if event.event_type
-        == EngagementType.PARTICIPATION
+        if enum_value(
+            event.event_type
+        )
+        == "participation"
     )
 
     # ========================================================
@@ -840,8 +905,11 @@ async def campaign_dashboard(
     else:
 
         open_rate = 0.0
+
         click_through_rate = 0.0
+
         response_rate = 0.0
+
         participation_rate = 0.0
 
     return {
@@ -894,6 +962,7 @@ async def campaign_dashboard(
 # ============================================================
 # CAMPAIGN DELIVERY LOGS
 # ============================================================
+
 
 @router.get(
     "/campaign/{campaign_id}/logs"
@@ -967,7 +1036,9 @@ async def campaign_delivery_logs(
                     delivery.recipient_id
                 ),
                 "channel": delivery.channel,
-                "status": delivery.status.value,
+                "status": enum_value(
+                    delivery.status
+                ),
                 "provider": delivery.provider,
                 "provider_message_id": (
                     delivery.provider_message_id
@@ -994,14 +1065,14 @@ async def campaign_delivery_logs(
                         "id": str(
                             event.id
                         ),
-                        "type": (
-                            event.event_type.value
+                        "type": enum_value(
+                            event.event_type
                         ),
                         "event_at": (
                             event.event_at
                         ),
                         "metadata": (
-                            event.metadata
+                            event.event_metadata
                         ),
                     }
                     for event in events
@@ -1023,6 +1094,7 @@ async def campaign_delivery_logs(
 # ============================================================
 # DELIVERY ENGAGEMENT HISTORY
 # ============================================================
+
 
 @router.get(
     "/{delivery_id}/engagement"
@@ -1062,14 +1134,14 @@ async def get_delivery_engagement(
                 "id": str(
                     event.id
                 ),
-                "type": (
-                    event.event_type.value
+                "type": enum_value(
+                    event.event_type
                 ),
                 "event_at": (
                     event.event_at
                 ),
                 "metadata": (
-                    event.metadata
+                    event.event_metadata
                 ),
             }
             for event in events

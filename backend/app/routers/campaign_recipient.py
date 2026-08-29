@@ -447,6 +447,7 @@ async def send_all_recipients(
         CampaignStatus.READY,
         CampaignStatus.SCHEDULED,
         CampaignStatus.SENDING,
+        CampaignStatus.FAILED,
     }
 
     if campaign.status not in allowed_statuses:
@@ -455,7 +456,7 @@ async def send_all_recipients(
             status_code=400,
             detail=(
                 "Campaign must be ready, "
-                "scheduled, or sending "
+                "scheduled, sending, or failed "
                 "before recipients can be sent"
             ),
         )
@@ -470,8 +471,12 @@ async def send_all_recipients(
         ).where(
             CampaignRecipient.campaign_id
             == campaign_id,
-            CampaignRecipient.status
-            == RecipientStatus.PENDING,
+            CampaignRecipient.status.in_(
+                [
+                    RecipientStatus.PENDING,
+                    RecipientStatus.FAILED,
+                ]
+            ),
         )
     )
 

@@ -99,16 +99,43 @@ async def get_campaign_analytics(
     if recipient_ids:
 
         delivery_result = await db.execute(
-            select(MessageDelivery).where(
+            select(MessageDelivery)
+            .where(
                 MessageDelivery.recipient_id.in_(
                     recipient_ids
                 )
             )
+            .order_by(
+                MessageDelivery.sent_at.desc(),
+                MessageDelivery.id.desc(),
+            )
         )
 
-        deliveries = (
+        all_deliveries = (
             delivery_result.scalars().all()
         )
+
+        # Keep only the latest delivery attempt for each
+        # recipient + channel combination.
+        seen_delivery_keys = set()
+
+        for delivery in all_deliveries:
+
+            delivery_key = (
+                delivery.recipient_id,
+                delivery.channel,
+            )
+
+            if delivery_key in seen_delivery_keys:
+                continue
+
+            seen_delivery_keys.add(
+                delivery_key
+            )
+
+            deliveries.append(
+                delivery
+            )
 
     # --------------------------------------------------------
     # DELIVERY COUNTERS

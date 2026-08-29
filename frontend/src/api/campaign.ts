@@ -1,10 +1,16 @@
 import { apiClient } from "./client";
 
+
+/* ============================================================
+   CAMPAIGN TYPES
+   ============================================================ */
+
 export type CampaignType =
   | "awareness"
   | "emergency"
   | "educational"
   | "announcement";
+
 
 export type CampaignStatus =
   | "draft"
@@ -15,142 +21,239 @@ export type CampaignStatus =
   | "completed"
   | "failed";
 
+
+/* ============================================================
+   CAMPAIGN
+   ============================================================ */
+
 export interface Campaign {
   id: string;
   title: string;
   content: string;
+
   type: CampaignType;
   status: CampaignStatus;
 
-  created_by?: string;
+  created_by: string;
 
-  target_filters: Record<string, string> | null;
+  target_filters:
+    | Record<string, unknown>
+    | null;
+
+  template_id:
+    | string
+    | null;
+
+  scheduled_at:
+    | string
+    | null;
+
+  started_at:
+    | string
+    | null;
+
+  completed_at:
+    | string
+    | null;
 
   channels: string[];
 
-  template_id: string | null;
-
-  created_at?: string;
-  scheduled_at?: string | null;
-  started_at?: string | null;
-  completed_at?: string | null;
-  updated_at?: string;
+  created_at:
+    | string
+    | null;
 }
+
+
+/* ============================================================
+   CREATE / UPDATE
+   ============================================================ */
 
 export interface CreateCampaignPayload {
   title: string;
   content: string;
   type: CampaignType;
 
-  target_filters?: Record<string, string>;
+  target_filters?:
+    Record<string, unknown>;
 
-  channels?: string[];
+  template_id?:
+    string | null;
 
-  template_id?: string | null;
+  scheduled_at?:
+    string | null;
 
-  scheduled_at?: string | null;
+  channels?:
+    string[];
 }
+
+
+/* ============================================================
+   TRANSITION
+   ============================================================ */
 
 export interface CampaignTransitionPayload {
   new_status: CampaignStatus;
 }
 
-// ============================================================
-// GET /campaigns/
-// ============================================================
+
+/* ============================================================
+   FETCH CAMPAIGNS
+   ============================================================ */
 
 export async function fetchCampaigns(): Promise<Campaign[]> {
-  const res = await apiClient.get<Campaign[]>("/campaigns/");
-  return res.data;
+  const response =
+    await apiClient.get<Campaign[]>(
+      "/campaigns/"
+    );
+
+  return response.data;
 }
 
-// ============================================================
-// GET /campaigns/{id}
-// ============================================================
+
+/* ============================================================
+   FETCH SINGLE CAMPAIGN
+   ============================================================ */
 
 export async function fetchCampaign(
   id: string
 ): Promise<Campaign> {
-  const res = await apiClient.get<Campaign>(
-    `/campaigns/${id}`
-  );
+  const response =
+    await apiClient.get<Campaign>(
+      `/campaigns/${id}`
+    );
 
-  return res.data;
+  return response.data;
 }
 
-// ============================================================
-// POST /campaigns/
-// ============================================================
+
+/* ============================================================
+   CREATE CAMPAIGN
+   ============================================================ */
 
 export async function createCampaign(
   data: CreateCampaignPayload
 ): Promise<Campaign> {
-  const res = await apiClient.post<Campaign>(
-    "/campaigns/",
-    data
-  );
+  const response =
+    await apiClient.post<Campaign>(
+      "/campaigns/",
+      data
+    );
 
-  return res.data;
+  return response.data;
 }
 
-// ============================================================
-// PUT /campaigns/{id}
-// ============================================================
+
+/* ============================================================
+   UPDATE CAMPAIGN
+   ============================================================ */
 
 export async function updateCampaign(
   id: string,
   data: CreateCampaignPayload
 ): Promise<Campaign> {
-  const res = await apiClient.put<Campaign>(
-    `/campaigns/${id}`,
-    data
-  );
+  const response =
+    await apiClient.put<Campaign>(
+      `/campaigns/${id}`,
+      data
+    );
 
-  return res.data;
+  return response.data;
 }
 
-// ============================================================
-// POST /campaigns/{id}/transition
-// ============================================================
+
+/* ============================================================
+   TRANSITION CAMPAIGN
+   ============================================================ */
 
 export async function transitionCampaign(
   id: string,
   newStatus: CampaignStatus
 ): Promise<Campaign> {
-  const res = await apiClient.post<Campaign>(
-    `/campaigns/${id}/transition`,
-    {
-      new_status: newStatus,
-    }
-  );
+  const response =
+    await apiClient.post<Campaign>(
+      `/campaigns/${id}/transition`,
+      {
+        new_status: newStatus,
+      }
+    );
 
-  return res.data;
+  return response.data;
 }
 
-// ============================================================
-// POST /campaigns/{id}/send-all
-// ============================================================
+
+/* ============================================================
+   ASSIGN MATCHING RECIPIENTS
+   ============================================================ */
+
+export async function assignMatchingRecipients(
+  campaignId: string
+) {
+  const response =
+    await apiClient.post(
+      `/campaigns/${campaignId}/recipients/assign`
+    );
+
+  return response.data;
+}
+
+
+/* ============================================================
+   ADD SINGLE RECIPIENT
+   ============================================================ */
+
+export async function addCampaignRecipient(
+  campaignId: string,
+  audienceMemberId: string
+) {
+  const response =
+    await apiClient.post(
+      `/campaigns/${campaignId}/recipients/${audienceMemberId}`
+    );
+
+  return response.data;
+}
+
+
+/* ============================================================
+   FETCH CAMPAIGN RECIPIENTS
+   ============================================================ */
+
+export async function fetchCampaignRecipients(
+  campaignId: string
+) {
+  const response =
+    await apiClient.get(
+      `/campaigns/${campaignId}/recipients`
+    );
+
+  return response.data;
+}
+
+
+/* ============================================================
+   SEND ALL RECIPIENTS
+   ============================================================ */
 
 export async function sendAllCampaignRecipients(
-  id: string
-): Promise<{
-  campaign_id: string;
-  message: string;
-  sent: number;
-  failed: number;
-  channels?: string[];
-  channel_results?: Record<
-    string,
-    {
-      sent: number;
-      failed: number;
-    }
-  >;
-  campaign_status?: CampaignStatus;
-}> {
-  const res = await apiClient.post(
-    `/campaigns/${id}/send-all`
-  );
+  campaignId: string
+) {
+  const response =
+    await apiClient.post(
+      `/campaigns/${campaignId}/send-all`
+    );
 
-  return res.data;
+  return response.data;
+}
+
+
+/* ============================================================
+   DELETE CAMPAIGN
+   ============================================================ */
+
+export async function deleteCampaign(
+  campaignId: string
+): Promise<void> {
+  await apiClient.delete(
+    `/campaigns/${campaignId}`
+  );
 }

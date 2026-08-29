@@ -88,6 +88,12 @@ class EmailService(BaseChannel):
         password = config.get(
             "password"
         )
+        print(
+             "SMTP DEBUG:",
+             "username=", username,
+             "password_length=", len(password or ""),
+             "password_present=", bool(password),
+        )
 
         from_email = config.get(
             "from_email",
@@ -159,6 +165,18 @@ class EmailService(BaseChannel):
                 "dummy",
             )
         ).strip().lower()
+
+        print(
+            "EMAIL SMTP DEBUG:",
+            {
+                "provider": provider,
+                "host": config.get("host"),
+                "username": config.get("username"),
+                "from_email": config.get("from_email"),
+                "password_present": bool(config.get("password")),
+                "password_length": len(str(config.get("password", ""))),
+            }
+        )
 
         # ----------------------------------------------------
         # Validate recipient

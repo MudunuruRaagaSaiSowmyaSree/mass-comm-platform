@@ -469,9 +469,8 @@ async def send_message(
 
     try:
         await send_email(
-            to_email=audience_member.email,
-            subject=campaign.title,
-            body=campaign.content,
+            recipient=audience_member.email,
+            message=campaign.content,
         )
 
         # ----------------------------------------------------
@@ -569,6 +568,8 @@ async def mark_delivered(
         )
 
     delivery.status = RecipientStatus.DELIVERED
+    delivery.delivered_at = datetime.utcnow()
+
     recipient.status = RecipientStatus.DELIVERED
 
     await db.commit()
@@ -626,6 +627,7 @@ async def mark_failed(
         )
 
     delivery.status = RecipientStatus.FAILED
+    delivery.failed_at = datetime.utcnow()
     delivery.error_message = "Message delivery failed"
 
     recipient.status = RecipientStatus.FAILED

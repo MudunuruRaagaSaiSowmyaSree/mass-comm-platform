@@ -15,6 +15,8 @@ from fastapi.responses import PlainTextResponse
 
 from fastapi.staticfiles import StaticFiles
 
+from app.routers.users import router as users_router
+
 from sqlalchemy import select
 
 from app.database import (
@@ -351,6 +353,9 @@ app.include_router(
     delivery_tracking_router
 )
 
+app.include_router(
+    users_router
+)
 
 # ------------------------------------------------------------
 # Channel configuration

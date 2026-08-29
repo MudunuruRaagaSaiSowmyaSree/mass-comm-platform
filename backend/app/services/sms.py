@@ -17,6 +17,10 @@ Twilio configuration example:
 
 The implementation uses the Twilio REST API through httpx.
 
+Twilio trial-account restrictions are handled explicitly so that
+the rest of the platform receives a clean ChannelDeliveryResult
+instead of an unhandled provider error.
+
 No WhatsApp functionality is modified.
 """
 
@@ -53,7 +57,14 @@ class SMSService(BaseChannel):
         config: dict,
     ) -> tuple[str | None, dict]:
         """
-        Send SMS through Twilio REST API.
+        Send SMS through the Twilio REST API.
+
+        Raises:
+            ValueError:
+                When Twilio configuration is incomplete.
+
+            RuntimeError:
+                When Twilio rejects the request.
         """
 
         account_sid = config.get(
@@ -68,20 +79,31 @@ class SMSService(BaseChannel):
             "from_number"
         )
 
+        # ----------------------------------------------------
+        # Validate Twilio configuration
+        # ----------------------------------------------------
+
         if not account_sid:
+
             raise ValueError(
                 "Twilio account_sid is required."
             )
 
         if not auth_token:
+
             raise ValueError(
                 "Twilio auth_token is required."
             )
 
         if not from_number:
+
             raise ValueError(
                 "Twilio from_number is required."
             )
+
+        # ----------------------------------------------------
+        # Twilio API URL
+        # ----------------------------------------------------
 
         url = (
             "https://api.twilio.com/2010-04-01/"
@@ -89,11 +111,19 @@ class SMSService(BaseChannel):
             "Messages.json"
         )
 
+        # ----------------------------------------------------
+        # Request data
+        # ----------------------------------------------------
+
         data = {
             "To": recipient,
             "From": from_number,
             "Body": message,
         }
+
+        # ----------------------------------------------------
+        # Send request
+        # ----------------------------------------------------
 
         async with httpx.AsyncClient(
             timeout=30
@@ -108,19 +138,112 @@ class SMSService(BaseChannel):
                 ),
             )
 
+        # ----------------------------------------------------
+        # Parse response
+        # ----------------------------------------------------
+
+        try:
+
+            response_data = response.json()
+
+        except Exception:
+
+            response_data = {
+                "raw_response": response.text
+            }
+
+        # ----------------------------------------------------
+        # Twilio error
+        # ----------------------------------------------------
+
         if response.status_code >= 400:
 
-            raise RuntimeError(
-                "Twilio API error: "
-                f"{response.status_code} "
-                f"{response.text}"
+            error_code = response_data.get(
+                "code"
             )
 
-        response_data = response.json()
+            error_message = response_data.get(
+                "message"
+            )
+
+            more_info = response_data.get(
+                "more_info"
+            )
+
+            # ------------------------------------------------
+            # Preserve Twilio's structured error information
+            # ------------------------------------------------
+
+            raise RuntimeError(
+                f"Twilio API error: "
+                f"{response.status_code}; "
+                f"code={error_code}; "
+                f"message={error_message}; "
+                f"more_info={more_info}"
+            )
+
+        # ----------------------------------------------------
+        # Successful response
+        # ----------------------------------------------------
 
         return (
             response_data.get("sid"),
             response_data,
+        )
+
+    # ========================================================
+    # TWILIO TRIAL ERROR DETECTION
+    # ========================================================
+
+    @staticmethod
+    def _is_twilio_trial_restriction(
+        exc: Exception,
+    ) -> bool:
+        """
+        Determine whether a Twilio error is caused by a
+        trial-account restriction.
+
+        Twilio can return different error codes/messages
+        depending on the type of trial restriction.
+
+        The currently observed error is:
+
+            572006
+
+        with the message:
+
+            Invalid template name. Trial accounts can only
+            use predefined SMS templates.
+        """
+
+        error_text = str(
+            exc
+        ).lower()
+
+        # ----------------------------------------------------
+        # Known Twilio trial restriction from this account
+        # ----------------------------------------------------
+
+        if "572006" in error_text:
+
+            return True
+
+        # ----------------------------------------------------
+        # Generic trial-account indicators
+        # ----------------------------------------------------
+
+        trial_indicators = [
+            "trial account",
+            "trial-account",
+            "trial environment",
+            "trial restriction",
+            "trial restrictions",
+            "only use predefined sms templates",
+        ]
+
+        return any(
+            indicator in error_text
+            for indicator in trial_indicators
         )
 
     # ========================================================
@@ -133,6 +256,17 @@ class SMSService(BaseChannel):
         message: str,
         config: dict | None = None,
     ) -> ChannelDeliveryResult:
+        """
+        Send an SMS.
+
+        Supported providers:
+
+            dummy
+            twilio
+
+        Twilio trial restrictions are returned as a normal
+        failed ChannelDeliveryResult.
+        """
 
         config = config or {}
 
@@ -143,9 +277,9 @@ class SMSService(BaseChannel):
             )
         ).strip().lower()
 
-        # ----------------------------------------------------
-        # Validate recipient
-        # ----------------------------------------------------
+        # ====================================================
+        # VALIDATE RECIPIENT
+        # ====================================================
 
         if not recipient:
 
@@ -160,9 +294,9 @@ class SMSService(BaseChannel):
                 ),
             )
 
-        # ----------------------------------------------------
-        # Validate message
-        # ----------------------------------------------------
+        # ====================================================
+        # VALIDATE MESSAGE
+        # ====================================================
 
         if not message:
 
@@ -178,7 +312,7 @@ class SMSService(BaseChannel):
             )
 
         # ====================================================
-        # DUMMY
+        # DUMMY PROVIDER
         # ====================================================
 
         if provider == "dummy":
@@ -210,7 +344,7 @@ class SMSService(BaseChannel):
             )
 
         # ====================================================
-        # TWILIO
+        # TWILIO PROVIDER
         # ====================================================
 
         if provider == "twilio":
@@ -219,11 +353,15 @@ class SMSService(BaseChannel):
 
                 message_id, response = (
                     await self._send_twilio(
-                        recipient,
-                        message,
-                        config,
+                        recipient=recipient,
+                        message=message,
+                        config=config,
                     )
                 )
+
+                # --------------------------------------------
+                # SUCCESS
+                # --------------------------------------------
 
                 return ChannelDeliveryResult(
                     success=True,
@@ -241,16 +379,60 @@ class SMSService(BaseChannel):
 
             except Exception as exc:
 
+                # --------------------------------------------
+                # TWILIO TRIAL RESTRICTION
+                # --------------------------------------------
+
+                if self._is_twilio_trial_restriction(
+                    exc
+                ):
+
+                    trial_error = (
+                        "Twilio trial-account restriction: "
+                        "this SMS cannot be sent under the "
+                        "current Twilio trial account "
+                        "restrictions. "
+                        "Verify the destination in Twilio's "
+                        "trial environment and use a permitted "
+                        "recipient, or upgrade the Twilio "
+                        "account for unrestricted SMS "
+                        "sending."
+                    )
+
+                    return ChannelDeliveryResult(
+                        success=False,
+                        channel=self.channel_name,
+                        recipient=recipient,
+                        message=message,
+                        provider=provider,
+                        message_id=None,
+                        error=trial_error,
+                        metadata={
+                            "mode": "twilio",
+                            "sent": False,
+                            "trial_restriction": True,
+                            "original_error": str(
+                                exc
+                            ),
+                        },
+                    )
+
+                # --------------------------------------------
+                # OTHER TWILIO ERROR
+                # --------------------------------------------
+
                 return ChannelDeliveryResult(
                     success=False,
                     channel=self.channel_name,
                     recipient=recipient,
                     message=message,
                     provider=provider,
+                    message_id=None,
                     error=str(exc),
                     metadata={
                         "mode": "twilio",
                         "sent": False,
+                        "trial_restriction": False,
                     },
                 )
 
@@ -270,6 +452,10 @@ class SMSService(BaseChannel):
                 f"Supported providers: "
                 f"dummy, twilio."
             ),
+            metadata={
+                "mode": "unsupported_provider",
+                "sent": False,
+            },
         )
 
 
@@ -283,6 +469,9 @@ async def send_sms_message(
     message: str,
     config: dict | None = None,
 ) -> ChannelDeliveryResult:
+    """
+    Convenience function for sending SMS.
+    """
 
     service = SMSService()
 

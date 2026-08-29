@@ -7,7 +7,10 @@ from fastapi import (
     HTTPException,
 )
 
-from sqlalchemy import select
+from sqlalchemy import (
+    delete,
+    select,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -569,3 +572,248 @@ async def transition_campaign(
     await db.refresh(campaign)
 
     return campaign
+
+# ============================================================
+# DELETE CAMPAIGN
+# ============================================================
+
+@router.delete(
+    "/{campaign_id}",
+)
+async def delete_campaign(
+    campaign_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(
+        get_current_user
+    ),
+):
+    """
+    Delete a campaign and all of its dependent records.
+
+    Admin:
+        Can delete any campaign.
+
+    Campaign Manager:
+        Can delete campaigns created by themselves.
+
+    Campaign Person:
+        Cannot delete campaigns.
+    """
+
+    # --------------------------------------------------------
+    # FIND CAMPAIGN
+    # --------------------------------------------------------
+
+    campaign = await db.get(
+        Campaign,
+        campaign_id,
+    )
+
+    if campaign is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Campaign not found.",
+        )
+
+
+    # --------------------------------------------------------
+    # CAMPAIGN PERSON CANNOT DELETE
+    # --------------------------------------------------------
+
+    if (
+        current_user.role
+        == Role.COMMS_TEAM
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "Campaign Persons are not allowed "
+                "to delete campaigns."
+            ),
+        )
+
+
+    # --------------------------------------------------------
+    # MANAGER OWNERSHIP CHECK
+    # --------------------------------------------------------
+
+    if (
+        current_user.role
+        == Role.CAMPAIGN_MANAGER
+        and campaign.created_by
+        != current_user.id
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "You can delete only campaigns "
+                "created by you."
+            ),
+        )
+
+
+    # --------------------------------------------------------
+    # IMPORT DEPENDENT MODELS
+    # --------------------------------------------------------
+
+    from app.models.campaign_recipient import (
+        CampaignRecipient,
+    )
+
+    from app.models.message_delivery import (
+        MessageDelivery,
+    )
+
+    from app.models.campaign_schedule import (
+        CampaignSchedule,
+    )
+
+    from app.models.engagement_event import (
+        EngagementEvent,
+    )
+
+    from app.models.feedback import (
+        Feedback,
+    )
+
+
+    # --------------------------------------------------------
+    # 1. DELETE MESSAGE DELIVERIES
+    #
+    # MessageDelivery.recipient_id
+    # references campaign_recipients.id
+    # --------------------------------------------------------
+
+    recipient_ids_subquery = select(
+        CampaignRecipient.id
+    ).where(
+        CampaignRecipient.campaign_id
+        == campaign_id
+    )
+
+
+    await db.execute(
+        delete(
+            MessageDelivery
+        ).where(
+            MessageDelivery.recipient_id.in_(
+                recipient_ids_subquery
+            )
+        )
+    )
+
+
+    # --------------------------------------------------------
+    # 2. DELETE CAMPAIGN RECIPIENTS
+    #
+    # CampaignRecipient.campaign_id
+    # references campaigns.id
+    # --------------------------------------------------------
+
+    await db.execute(
+        delete(
+            CampaignRecipient
+        ).where(
+            CampaignRecipient.campaign_id
+            == campaign_id
+        )
+    )
+
+
+    # --------------------------------------------------------
+    # 3. DELETE CAMPAIGN SCHEDULES
+    #
+    # CampaignSchedule.campaign_id
+    # references campaigns.id
+    # --------------------------------------------------------
+
+    await db.execute(
+        delete(
+            CampaignSchedule
+        ).where(
+            CampaignSchedule.campaign_id
+            == campaign_id
+        )
+    )
+
+
+    # --------------------------------------------------------
+    # 4. DELETE ENGAGEMENT EVENTS
+    #
+    # EngagementEvent.campaign_id
+    # references campaigns.id
+    # --------------------------------------------------------
+
+    await db.execute(
+        delete(
+            EngagementEvent
+        ).where(
+            EngagementEvent.campaign_id
+            == campaign_id
+        )
+    )
+
+
+    # --------------------------------------------------------
+    # 5. DELETE FEEDBACK
+    #
+    # Feedback.campaign_id
+    # references campaigns.id
+    # --------------------------------------------------------
+
+    await db.execute(
+        delete(
+            Feedback
+        ).where(
+            Feedback.campaign_id
+            == campaign_id
+        )
+    )
+
+
+    # --------------------------------------------------------
+    # 6. DELETE CAMPAIGN
+    # --------------------------------------------------------
+
+    await db.execute(
+        delete(
+            Campaign
+        ).where(
+            Campaign.id
+            == campaign_id
+        )
+    )
+
+
+    # --------------------------------------------------------
+    # COMMIT
+    # --------------------------------------------------------
+
+    try:
+
+        await db.commit()
+
+    except Exception as exc:
+
+        await db.rollback()
+
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "Campaign deletion failed: "
+                f"{exc}"
+            ),
+        )
+
+
+    # --------------------------------------------------------
+    # RESPONSE
+    # --------------------------------------------------------
+
+    return {
+        "message":
+            "Campaign deleted successfully.",
+
+        "campaign_id":
+            str(campaign_id),
+    }

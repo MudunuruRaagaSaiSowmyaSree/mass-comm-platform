@@ -139,30 +139,18 @@ async def get_campaign_delivery_status(
     delivered = 0
     failed = 0
 
-    for delivery in deliveries:
+    for recipient in recipients:
 
-        if delivery.status == (
-            RecipientStatus.PENDING
-        ):
-
+        if recipient.status == RecipientStatus.PENDING:
             pending += 1
 
-        elif delivery.status == (
-            RecipientStatus.SENT
-        ):
-
+        elif recipient.status == RecipientStatus.SENT:
             sent += 1
 
-        elif delivery.status == (
-            RecipientStatus.DELIVERED
-        ):
-
+        elif recipient.status == RecipientStatus.DELIVERED:
             delivered += 1
 
-        elif delivery.status == (
-            RecipientStatus.FAILED
-        ):
-
+        elif recipient.status == RecipientStatus.FAILED:
             failed += 1
 
     return {

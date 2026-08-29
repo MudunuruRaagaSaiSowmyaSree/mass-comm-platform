@@ -100,7 +100,6 @@ class User(Base):
 
     manager_id: Mapped[str | None] = mapped_column(
         String,
-        unique=True,
         nullable=True,
     )
 

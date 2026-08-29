@@ -1,23 +1,21 @@
 import asyncio
 from sqlalchemy import select
-from app.database import get_db
+from app.database import AsyncSessionLocal
 from app.models.user import User
 
 async def main():
-    gen = get_db()
-    db = await anext(gen)
-    try:
-        result = await db.execute(select(User))
-        users = result.scalars().all()
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(
+            select(User.id, User.name, User.email, User.role, User.is_active)
+        )
 
-        for user in users:
+        for row in result.all():
             print(
-                f"EMAIL={user.email} | "
-                f"NAME={user.name} | "
-                f"ROLE={user.role.value} | "
-                f"ACTIVE={user.is_active}"
+                f"ID={row.id} | "
+                f"Name={row.name} | "
+                f"Email={row.email} | "
+                f"Role={row.role} | "
+                f"Active={row.is_active}"
             )
-    finally:
-        await gen.aclose()
 
 asyncio.run(main())

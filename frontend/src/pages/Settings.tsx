@@ -1,1052 +1,874 @@
-import { useEffect, useState } from "react";
-import type { CurrentUser } from "../api/auth";
 import {
+  useEffect,
+  useState,
+  type FormEvent,
+} from "react";
+
+import {
+  fetchCurrentUser,
   updateCurrentUser,
-  changePassword,
+  type CurrentUser,
 } from "../api/auth";
 
-import {
-  fetchChannelConfigs,
-  enableChannel,
-  disableChannel,
-  type ChannelConfig,
-} from "../api/channelConfig";
 
-// ============================================================
-// TYPES
-// ============================================================
+/* ============================================================
+   TYPES
+   ============================================================ */
 
-type ChannelName =
-  | "email"
-  | "sms"
-  | "whatsapp"
-  | "push"
-  | "web_broadcast";
-
-// ============================================================
-// PROFILE ROW
-// ============================================================
-
-function Row({
-  label,
-  value,
-}: {
-  label: string;
-  value: string | null | undefined;
-}) {
-  if (!value) return null;
-
-  return (
-    <div className="flex items-center justify-between border-b border-slate-100 py-3 last:border-0">
-      <span className="text-[12.5px] text-slate-500">
-        {label}
-      </span>
-
-      <span className="text-[13px] font-medium text-slate-800">
-        {value}
-      </span>
-    </div>
-  );
+interface SettingsProps {
+  user: CurrentUser;
 }
 
-// ============================================================
-// ROLE LABELS
-// ============================================================
+type UserRole =
+  | "admin"
+  | "campaign_manager"
+  | "comms_team";
 
-const ROLE_LABELS: Record<string, string> = {
+
+/* ============================================================
+   ROLE LABELS
+   ============================================================ */
+
+const ROLE_LABELS: Record<
+  UserRole,
+  string
+> = {
   admin: "Admin",
-  campaign_manager: "Campaign Manager",
-  comms_team: "Comms Team",
+  campaign_manager: "Manager",
+  comms_team: "Campaign Person",
 };
 
-// ============================================================
-// CHANNELS
-// ============================================================
 
-const CHANNELS: {
-  key: ChannelName;
-  label: string;
-  description: string;
-  icon: string;
-}[] = [
-  {
-    key: "email",
-    label: "Email",
-    description: "Send campaign messages through email.",
-    icon: "📧",
-  },
-  {
-    key: "sms",
-    label: "SMS",
-    description: "Send campaign messages through SMS.",
-    icon: "💬",
-  },
-  {
-    key: "whatsapp",
-    label: "WhatsApp",
-    description: "Send campaign messages through WhatsApp.",
-    icon: "🟢",
-  },
-  {
-    key: "push",
-    label: "Push Notifications",
-    description: "Send notifications to connected devices.",
-    icon: "🔔",
-  },
-  {
-    key: "web_broadcast",
-    label: "Web Broadcast",
-    description: "Broadcast messages through the web platform.",
-    icon: "🌐",
-  },
-];
-
-// ============================================================
-// SETTINGS PAGE
-// ============================================================
+/* ============================================================
+   SETTINGS PAGE
+   ============================================================ */
 
 export default function Settings({
   user,
-  onUserUpdated,
-}: {
-  user: CurrentUser | null;
-  onUserUpdated?: (user: CurrentUser) => void;
-}) {
-  // ============================================================
-  // PROFILE EDITING
-  // ============================================================
+}: SettingsProps) {
 
-  const [editing, setEditing] = useState(false);
+  /* ==========================================================
+     PROFILE
+     ========================================================== */
 
-  const [name, setName] = useState("");
-  const [phone, setPhone] = useState("");
-  const [department, setDepartment] = useState("");
-  const [accessLevel, setAccessLevel] = useState("");
-  const [assignedRegion, setAssignedRegion] = useState("");
-  const [shiftTiming, setShiftTiming] = useState("");
+  const [name, setName] =
+    useState<string>(
+      user.name ?? ""
+    );
 
-  const [saving, setSaving] = useState(false);
+  const [phone, setPhone] =
+    useState<string>(
+      user.phone ?? ""
+    );
 
-  // ============================================================
-  // PROFILE MESSAGES
-  // ============================================================
 
-  const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
+  /* ==========================================================
+     ADMIN
+     ========================================================== */
 
-  // ============================================================
-  // CHANNEL CONFIGURATION
-  // ============================================================
+  const [department, setDepartment] =
+    useState<string>(
+      user.department ?? ""
+    );
 
-  const [channelConfigs, setChannelConfigs] = useState<
-    ChannelConfig[]
-  >([]);
+  const [accessLevel, setAccessLevel] =
+    useState<string>(
+      user.access_level ?? ""
+    );
 
-  const [loadingChannels, setLoadingChannels] =
-    useState(true);
 
-  const [channelError, setChannelError] =
-    useState("");
+  /* ==========================================================
+     MANAGER
+     ========================================================== */
 
-  const [channelSuccess, setChannelSuccess] =
-    useState("");
+  const [assignedRegion, setAssignedRegion] =
+    useState<string>(
+      user.assigned_region ?? ""
+    );
 
-  const [savingChannel, setSavingChannel] =
-    useState<ChannelName | null>(null);
+  const [shiftTiming, setShiftTiming] =
+    useState<string>(
+      user.shift_timing ?? ""
+    );
 
-  // ============================================================
-  // CHANGE PASSWORD
-  // ============================================================
 
-  const [currentPassword, setCurrentPassword] =
-    useState("");
+  /* ==========================================================
+     UI STATE
+     ========================================================== */
 
-  const [newPassword, setNewPassword] =
-    useState("");
+  const [loading, setLoading] =
+    useState<boolean>(false);
 
-  const [confirmPassword, setConfirmPassword] =
-    useState("");
+  const [saving, setSaving] =
+    useState<boolean>(false);
 
-  const [changingPassword, setChangingPassword] =
-    useState(false);
+  const [message, setMessage] =
+    useState<string | null>(
+      null
+    );
 
-  const [passwordError, setPasswordError] =
-    useState("");
+  const [error, setError] =
+    useState<string | null>(
+      null
+    );
 
-  const [passwordSuccess, setPasswordSuccess] =
-    useState("");
 
-  // ============================================================
-  // LOAD USER DATA
-  // ============================================================
-
-  useEffect(() => {
-    if (!user) {
-      return;
-    }
-
-    setName(user.name ?? "");
-    setPhone(user.phone ?? "");
-    setDepartment(user.department ?? "");
-    setAccessLevel(user.access_level ?? "");
-    setAssignedRegion(user.assigned_region ?? "");
-    setShiftTiming(user.shift_timing ?? "");
-  }, [user]);
-
-  // ============================================================
-  // LOAD CHANNEL CONFIGURATION
-  // ============================================================
+  /* ==========================================================
+     LOAD CURRENT USER
+     ========================================================== */
 
   useEffect(() => {
+
     let cancelled = false;
 
-    async function loadChannelConfigs() {
-      setLoadingChannels(true);
-      setChannelError("");
+    async function loadProfile() {
+
+      setLoading(true);
+      setError(null);
 
       try {
-        const configs = await fetchChannelConfigs();
 
-        if (!cancelled) {
-          setChannelConfigs(configs);
+        const currentUser =
+          await fetchCurrentUser();
+
+        if (cancelled) {
+          return;
         }
-      } catch (err: any) {
+
+        setName(
+          currentUser.name ?? ""
+        );
+
+        setPhone(
+          currentUser.phone ?? ""
+        );
+
+        setDepartment(
+          currentUser.department ?? ""
+        );
+
+        setAccessLevel(
+          currentUser.access_level ?? ""
+        );
+
+        setAssignedRegion(
+          currentUser.assigned_region ?? ""
+        );
+
+        setShiftTiming(
+          currentUser.shift_timing ?? ""
+        );
+
+      } catch (err) {
+
         console.error(
-          "Channel configuration load error:",
+          "Failed to load profile:",
           err
         );
 
         if (!cancelled) {
-          setChannelError(
-            err?.response?.data?.detail ??
-              "Unable to load channel configuration."
+
+          setError(
+            "Could not load your profile."
           );
+
         }
+
       } finally {
+
         if (!cancelled) {
-          setLoadingChannels(false);
+          setLoading(false);
         }
+
       }
     }
 
-    loadChannelConfigs();
+    void loadProfile();
 
     return () => {
       cancelled = true;
     };
+
   }, []);
 
-  // ============================================================
-  // PROFILE EDIT
-  // ============================================================
 
-  function handleEdit() {
-    if (!user) {
-      return;
-    }
+  /* ==========================================================
+     SAVE PROFILE
+     ========================================================== */
 
-    setError("");
-    setSuccess("");
-    setEditing(true);
-  }
+  async function handleSave(
+    event: FormEvent<HTMLFormElement>
+  ) {
 
-  function handleCancel() {
-    if (!user) {
-      return;
-    }
-
-    setName(user.name ?? "");
-    setPhone(user.phone ?? "");
-    setDepartment(user.department ?? "");
-    setAccessLevel(user.access_level ?? "");
-    setAssignedRegion(user.assigned_region ?? "");
-    setShiftTiming(user.shift_timing ?? "");
-
-    setError("");
-    setSuccess("");
-    setEditing(false);
-  }
-
-  async function handleSave() {
-    if (!user) {
-      setError("User profile is not available.");
-      return;
-    }
+    event.preventDefault();
 
     setSaving(true);
-    setError("");
-    setSuccess("");
+    setMessage(null);
+    setError(null);
 
     try {
-      const updatedUser = await updateCurrentUser({
-        name: name.trim(),
-        phone: phone.trim(),
-        department: department.trim(),
-        access_level: accessLevel.trim(),
-        assigned_region: assignedRegion.trim(),
-        shift_timing: shiftTiming.trim(),
-      });
 
-      if (onUserUpdated) {
-        onUserUpdated(updatedUser);
-      }
+      const response =
+        await updateCurrentUser({
 
-      setSuccess("Profile updated successfully.");
-      setEditing(false);
+          name:
+            name.trim(),
+
+          phone:
+            phone.trim(),
+
+          ...(user.role === "admin"
+            ? {
+                department:
+                  department.trim(),
+
+                access_level:
+                  accessLevel.trim(),
+              }
+            : {}),
+
+          ...(user.role ===
+          "campaign_manager"
+            ? {
+                assigned_region:
+                  assignedRegion.trim(),
+
+                shift_timing:
+                  shiftTiming.trim(),
+              }
+            : {}),
+        });
+
+
+      /*
+       * Backend currently returns:
+       *
+       * {
+       *   message: "...",
+       *   user: {...}
+       * }
+       */
+
+      const updatedUser:
+        CurrentUser =
+        response.user ?? response;
+
+
+      setName(
+        updatedUser.name ?? ""
+      );
+
+      setPhone(
+        updatedUser.phone ?? ""
+      );
+
+      setDepartment(
+        updatedUser.department ?? ""
+      );
+
+      setAccessLevel(
+        updatedUser.access_level ?? ""
+      );
+
+      setAssignedRegion(
+        updatedUser.assigned_region ??
+          ""
+      );
+
+      setShiftTiming(
+        updatedUser.shift_timing ??
+          ""
+      );
+
+      setMessage(
+        response.message ??
+          "Profile updated successfully."
+      );
+
     } catch (err: any) {
+
       console.error(
-        "Profile update error:",
+        "Failed to update profile:",
         err
       );
 
       setError(
         err?.response?.data?.detail ??
-          "Unable to update your profile."
+          "Could not update your profile."
       );
+
     } finally {
+
       setSaving(false);
+
     }
   }
 
-  // ============================================================
-  // CHANGE PASSWORD
-  // ============================================================
 
-  async function handleChangePassword(
-    e: React.FormEvent
-  ) {
-    e.preventDefault();
+  /* ==========================================================
+     ROLE
+     ========================================================== */
 
-    setPasswordError("");
-    setPasswordSuccess("");
+  const role =
+    user.role as UserRole;
 
-    if (
-      !currentPassword ||
-      !newPassword ||
-      !confirmPassword
-    ) {
-      setPasswordError(
-        "Please fill in all password fields."
-      );
-      return;
-    }
+  const roleLabel =
+    ROLE_LABELS[role] ??
+    role;
 
-    if (newPassword.length < 8) {
-      setPasswordError(
-        "New password must be at least 8 characters long."
-      );
-      return;
-    }
 
-    if (newPassword !== confirmPassword) {
-      setPasswordError(
-        "New password and confirmation do not match."
-      );
-      return;
-    }
+  /* ==========================================================
+     INITIALS
+     ========================================================== */
 
-    setChangingPassword(true);
+  const displayName =
+    user.name?.trim() ||
+    user.email;
 
-    try {
-      await changePassword({
-        current_password: currentPassword,
-        new_password: newPassword,
-      });
+  const initials =
+    displayName
+      .split(/\s+/)
+      .slice(0, 2)
+      .map(
+        (part) =>
+          part.charAt(0)
+      )
+      .join("")
+      .toUpperCase();
 
-      setCurrentPassword("");
-      setNewPassword("");
-      setConfirmPassword("");
 
-      setPasswordSuccess(
-        "Password changed successfully."
-      );
-    } catch (err: any) {
-      console.error(
-        "Change password error:",
-        err
-      );
-
-      setPasswordError(
-        err?.response?.data?.detail ??
-          "Unable to change your password."
-      );
-    } finally {
-      setChangingPassword(false);
-    }
-  }
-
-  // ============================================================
-  // CHANNEL HELPERS
-  // ============================================================
-
-  function getChannelConfig(
-    channel: ChannelName
-  ): ChannelConfig {
-    const existing = channelConfigs.find(
-      (item) => item.channel === channel
-    );
-
-    if (existing) {
-      return existing;
-    }
-
-    return {
-      channel,
-      enabled: false,
-      config: {},
-    };
-  }
-
-  function getChannelLabel(
-    channel: ChannelName
-  ): string {
-    return (
-      CHANNELS.find(
-        (item) => item.key === channel
-      )?.label ?? channel
-    );
-  }
-
-  // ============================================================
-  // ENABLE / DISABLE CHANNEL
-  // ============================================================
-
-  async function handleChannelToggle(
-    channel: ChannelName,
-    enabled: boolean
-  ) {
-    setSavingChannel(channel);
-    setChannelError("");
-    setChannelSuccess("");
-
-    try {
-      const updated = enabled
-        ? await enableChannel(channel)
-        : await disableChannel(channel);
-
-      setChannelConfigs((current) => {
-        const exists = current.some(
-          (item) => item.channel === channel
-        );
-
-        if (exists) {
-          return current.map((item) =>
-            item.channel === channel
-              ? updated
-              : item
-          );
-        }
-
-        return [...current, updated];
-      });
-
-      setChannelSuccess(
-        `${getChannelLabel(channel)} ${
-          enabled ? "enabled" : "disabled"
-        } successfully.`
-      );
-    } catch (err: any) {
-      console.error(
-        "Channel configuration update error:",
-        err
-      );
-
-      setChannelError(
-        err?.response?.data?.detail ??
-          `Unable to ${
-            enabled ? "enable" : "disable"
-          } ${getChannelLabel(channel)}.`
-      );
-    } finally {
-      setSavingChannel(null);
-    }
-  }
-
-  // ============================================================
-  // UI
-  // ============================================================
+  /* ==========================================================
+     RENDER
+     ========================================================== */
 
   return (
-    <div className="flex-1 overflow-y-auto bg-slate-50 px-8 py-6">
+    <div className="flex-1 overflow-y-auto bg-slate-50">
 
-      {/* ======================================================
-          PAGE HEADER
-      ====================================================== */}
+      <div className="mx-auto w-full max-w-5xl px-8 py-6">
 
-      <div className="flex max-w-3xl items-start justify-between">
+        {/* ====================================================
+           HEADER
+           ==================================================== */}
+
         <div>
+
           <h1 className="text-[22px] font-bold text-slate-900">
             Settings
           </h1>
 
           <p className="mt-1 text-[13px] text-slate-500">
-            Manage your account and communication settings.
+            Manage your profile and account information.
           </p>
+
         </div>
 
-        {user && !editing && (
-          <button
-            onClick={handleEdit}
-            className="rounded-xl bg-[#5A3FD6] px-4 py-2.5 text-[12px] font-semibold text-white transition hover:bg-[#4C32C2]"
-          >
-            Edit Profile
-          </button>
-        )}
-      </div>
 
-      {/* ======================================================
-          PROFILE CARD
-      ====================================================== */}
+        {/* ====================================================
+           SUCCESS
+           ==================================================== */}
 
-      <div className="mt-5 max-w-3xl rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
+        {message && (
+          <div className="mt-4 rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3">
 
-        {!user && (
-          <p className="text-[13px] text-slate-500">
-            Loading profile...
-          </p>
+            <p className="text-[12px] font-medium text-emerald-700">
+              {message}
+            </p>
+
+          </div>
         )}
 
-        {user && (
-          <>
-            {/* Profile header */}
 
-            <div className="flex items-center gap-3">
+        {/* ====================================================
+           ERROR
+           ==================================================== */}
 
-              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[#EDE9FE] text-[16px] font-semibold uppercase text-[#5A3FD6]">
-                {(user.name ?? "U").charAt(0)}
-              </div>
+        {error && (
+          <div className="mt-4 rounded-xl border border-rose-100 bg-rose-50 px-4 py-3">
 
-              <div>
-                <p className="text-[15px] font-semibold text-slate-900">
-                  {user.name ?? "User"}
-                </p>
+            <p className="text-[12px] font-medium text-rose-600">
+              {error}
+            </p>
 
-                <p className="text-[12px] text-slate-500">
-                  {ROLE_LABELS[user.role] ?? user.role}
-                </p>
+          </div>
+        )}
+
+
+        {/* ====================================================
+           PROFILE SUMMARY
+           ==================================================== */}
+
+        <div className="mt-5 rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
+
+          <div className="flex items-center gap-4">
+
+            <div className="flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-full bg-violet-100 text-[17px] font-bold text-violet-700">
+              {initials}
+            </div>
+
+
+            <div className="min-w-0">
+
+              <p className="truncate text-[16px] font-bold text-slate-900">
+                {user.name ||
+                  "Unnamed User"}
+              </p>
+
+              <p className="mt-1 truncate text-[12px] text-slate-500">
+                {user.email}
+              </p>
+
+              <div className="mt-2">
+
+                <span className="rounded-full bg-violet-50 px-2.5 py-1 text-[10px] font-semibold text-violet-700">
+                  {roleLabel}
+                </span>
+
               </div>
 
             </div>
 
-            {/* ==================================================
-                VIEW PROFILE
-            ================================================== */}
+          </div>
 
-            {!editing && (
-              <div className="mt-4">
+        </div>
 
-                <Row
-                  label="Email"
-                  value={user.email}
-                />
 
-                <Row
-                  label="Phone"
-                  value={user.phone}
-                />
+        {/* ====================================================
+           PROFILE FORM
+           ==================================================== */}
 
-                <Row
-                  label="Role"
-                  value={
-                    ROLE_LABELS[user.role] ??
-                    user.role
-                  }
-                />
+        <form
+          onSubmit={handleSave}
+          className="mt-5"
+        >
 
-                <Row
-                  label="Status"
-                  value={
-                    user.is_active
-                      ? "Active"
-                      : "Inactive"
-                  }
-                />
+          <div className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
 
-                <Row
-                  label="Admin ID"
-                  value={user.admin_id}
-                />
+            {/* ------------------------------------------------
+               SECTION TITLE
+               ------------------------------------------------ */}
 
-                <Row
-                  label="Department"
-                  value={user.department}
-                />
+            <div className="border-b border-slate-100 pb-4">
 
-                <Row
-                  label="Access Level"
-                  value={user.access_level}
-                />
+              <p className="text-[14px] font-semibold text-slate-900">
+                Profile Information
+              </p>
 
-                <Row
-                  label="Manager ID"
-                  value={user.manager_id}
-                />
+              <p className="mt-1 text-[11px] text-slate-500">
+                Update your account information.
+              </p>
 
-                <Row
-                  label="Assigned Region"
-                  value={user.assigned_region}
-                />
+            </div>
 
-                <Row
-                  label="Shift Timing"
-                  value={user.shift_timing}
-                />
+
+            {/* ------------------------------------------------
+               LOADING
+               ------------------------------------------------ */}
+
+            {loading ? (
+
+              <div className="py-12 text-center">
+
+                <p className="text-[12px] text-slate-400">
+                  Loading profile...
+                </p>
 
               </div>
-            )}
 
-            {/* ==================================================
-                EDIT PROFILE
-            ================================================== */}
+            ) : (
 
-            {editing && (
-              <div className="mt-5 space-y-4">
+              <div className="mt-5 grid grid-cols-1 gap-5 md:grid-cols-2">
 
-                {/* Email */}
+                {/* ==================================================
+                   NAME
+                   ================================================== */}
 
                 <div>
-                  <label className="mb-1 block text-[12px] font-semibold text-slate-600">
+
+                  <label className="mb-1.5 block text-[11px] font-semibold text-slate-700">
+                    Full Name
+                  </label>
+
+                  <input
+                    type="text"
+                    value={name}
+                    onChange={(event) =>
+                      setName(
+                        event.target.value
+                      )
+                    }
+                    placeholder="Your name"
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-[12.5px] text-slate-700 outline-none transition focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
+                  />
+
+                </div>
+
+
+                {/* ==================================================
+                   EMAIL
+                   ================================================== */}
+
+                <div>
+
+                  <label className="mb-1.5 block text-[11px] font-semibold text-slate-700">
                     Email
                   </label>
 
                   <input
+                    type="email"
                     value={user.email}
                     disabled
-                    className="w-full rounded-xl border border-slate-200 bg-slate-100 px-3 py-2.5 text-[13px] text-slate-500 outline-none"
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-[12.5px] text-slate-500 outline-none"
                   />
+
+                  <p className="mt-1 text-[9.5px] text-slate-400">
+                    Email cannot be changed here.
+                  </p>
+
                 </div>
 
-                {/* Name */}
+
+                {/* ==================================================
+                   PHONE
+                   ================================================== */}
 
                 <div>
-                  <label className="mb-1 block text-[12px] font-semibold text-slate-600">
-                    Name
-                  </label>
 
-                  <input
-                    value={name}
-                    onChange={(e) =>
-                      setName(e.target.value)
-                    }
-                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[13px] text-slate-800 outline-none focus:border-[#5A3FD6] focus:ring-2 focus:ring-[#5A3FD6]/20"
-                  />
-                </div>
-
-                {/* Phone */}
-
-                <div>
-                  <label className="mb-1 block text-[12px] font-semibold text-slate-600">
+                  <label className="mb-1.5 block text-[11px] font-semibold text-slate-700">
                     Phone
                   </label>
 
                   <input
+                    type="text"
                     value={phone}
-                    onChange={(e) =>
-                      setPhone(e.target.value)
+                    onChange={(event) =>
+                      setPhone(
+                        event.target.value
+                      )
                     }
-                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[13px] text-slate-800 outline-none focus:border-[#5A3FD6] focus:ring-2 focus:ring-[#5A3FD6]/20"
+                    placeholder="Phone number"
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-[12.5px] text-slate-700 outline-none transition focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
                   />
+
                 </div>
 
-                {/* Department */}
+
+                {/* ==================================================
+                   ROLE
+                   ================================================== */}
 
                 <div>
-                  <label className="mb-1 block text-[12px] font-semibold text-slate-600">
-                    Department
+
+                  <label className="mb-1.5 block text-[11px] font-semibold text-slate-700">
+                    Role
                   </label>
 
                   <input
-                    value={department}
-                    onChange={(e) =>
-                      setDepartment(e.target.value)
-                    }
-                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[13px] text-slate-800 outline-none focus:border-[#5A3FD6] focus:ring-2 focus:ring-[#5A3FD6]/20"
+                    type="text"
+                    value={roleLabel}
+                    disabled
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-[12.5px] text-slate-500 outline-none"
                   />
-                </div>
 
-                {/* Access Level */}
-
-                <div>
-                  <label className="mb-1 block text-[12px] font-semibold text-slate-600">
-                    Access Level
-                  </label>
-
-                  <input
-                    value={accessLevel}
-                    onChange={(e) =>
-                      setAccessLevel(e.target.value)
-                    }
-                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[13px] text-slate-800 outline-none focus:border-[#5A3FD6] focus:ring-2 focus:ring-[#5A3FD6]/20"
-                  />
-                </div>
-
-                {/* Assigned Region */}
-
-                <div>
-                  <label className="mb-1 block text-[12px] font-semibold text-slate-600">
-                    Assigned Region
-                  </label>
-
-                  <input
-                    value={assignedRegion}
-                    onChange={(e) =>
-                      setAssignedRegion(e.target.value)
-                    }
-                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[13px] text-slate-800 outline-none focus:border-[#5A3FD6] focus:ring-2 focus:ring-[#5A3FD6]/20"
-                  />
-                </div>
-
-                {/* Shift Timing */}
-
-                <div>
-                  <label className="mb-1 block text-[12px] font-semibold text-slate-600">
-                    Shift Timing
-                  </label>
-
-                  <input
-                    value={shiftTiming}
-                    onChange={(e) =>
-                      setShiftTiming(e.target.value)
-                    }
-                    placeholder="Example: 9 AM - 6 PM"
-                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[13px] text-slate-800 outline-none focus:border-[#5A3FD6] focus:ring-2 focus:ring-[#5A3FD6]/20"
-                  />
-                </div>
-
-                {/* Buttons */}
-
-                <div className="flex justify-end gap-3 pt-2">
-
-                  <button
-                    onClick={handleCancel}
-                    disabled={saving}
-                    className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-[12px] font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
-                  >
-                    Cancel
-                  </button>
-
-                  <button
-                    onClick={handleSave}
-                    disabled={saving}
-                    className="rounded-xl bg-[#5A3FD6] px-5 py-2.5 text-[12px] font-semibold text-white hover:bg-[#4C32C2] disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {saving
-                      ? "Saving..."
-                      : "Save Changes"}
-                  </button>
+                  <p className="mt-1 text-[9.5px] text-slate-400">
+                    Role is managed by the system administrator.
+                  </p>
 
                 </div>
 
-              </div>
-            )}
 
-            {/* Profile success */}
+                {/* ==================================================
+                   ADMIN FIELDS
+                   ================================================== */}
 
-            {success && (
-              <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-3">
-                <p className="text-[12.5px] text-emerald-700">
-                  {success}
-                </p>
-              </div>
-            )}
+                {role === "admin" && (
+                  <>
 
-            {/* Profile error */}
+                    <div>
 
-            {error && (
-              <div className="mt-4 rounded-xl border border-rose-200 bg-rose-50 p-3">
-                <p className="text-[12.5px] text-rose-600">
-                  {error}
-                </p>
-              </div>
-            )}
-          </>
-        )}
+                      <label className="mb-1.5 block text-[11px] font-semibold text-slate-700">
+                        Department
+                      </label>
 
-      </div>
-
-      {/* ======================================================
-          CHANNEL CONFIGURATION
-      ====================================================== */}
-
-      {user && (
-        <div className="mt-5 max-w-3xl rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
-
-          <div className="mb-5">
-            <h2 className="text-[16px] font-semibold text-slate-900">
-              Channel Configuration
-            </h2>
-
-            <p className="mt-1 text-[12px] text-slate-500">
-              Enable or disable the communication channels
-              available to your campaigns.
-            </p>
-          </div>
-
-          {/* Loading */}
-
-          {loadingChannels && (
-            <div className="rounded-xl bg-slate-50 p-4">
-              <p className="text-[12.5px] text-slate-500">
-                Loading channel configuration...
-              </p>
-            </div>
-          )}
-
-          {/* Error */}
-
-          {channelError && (
-            <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 p-3">
-              <p className="text-[12.5px] text-rose-600">
-                {channelError}
-              </p>
-            </div>
-          )}
-
-          {/* Success */}
-
-          {channelSuccess && (
-            <div className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 p-3">
-              <p className="text-[12.5px] text-emerald-700">
-                {channelSuccess}
-              </p>
-            </div>
-          )}
-
-          {/* Channel list */}
-
-          {!loadingChannels && (
-            <div className="space-y-3">
-
-              {CHANNELS.map((channel) => {
-                const config = getChannelConfig(
-                  channel.key
-                );
-
-                const isSaving =
-                  savingChannel === channel.key;
-
-                return (
-                  <div
-                    key={channel.key}
-                    className="flex items-center justify-between rounded-2xl border border-slate-100 bg-slate-50 p-4"
-                  >
-
-                    {/* Channel information */}
-
-                    <div className="flex items-center gap-3">
-
-                      <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-white text-[20px] shadow-sm">
-                        {channel.icon}
-                      </div>
-
-                      <div>
-
-                        <p className="text-[13px] font-semibold text-slate-900">
-                          {channel.label}
-                        </p>
-
-                        <p className="mt-0.5 text-[11.5px] text-slate-500">
-                          {channel.description}
-                        </p>
-
-                        <p
-                          className={`mt-1 text-[10.5px] font-semibold ${
-                            config.enabled
-                              ? "text-emerald-600"
-                              : "text-slate-400"
-                          }`}
-                        >
-                          {config.enabled
-                            ? "Enabled"
-                            : "Disabled"}
-                        </p>
-
-                      </div>
+                      <input
+                        type="text"
+                        value={
+                          department
+                        }
+                        onChange={(
+                          event
+                        ) =>
+                          setDepartment(
+                            event.target.value
+                          )
+                        }
+                        placeholder="Department"
+                        className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-[12.5px] text-slate-700 outline-none transition focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
+                      />
 
                     </div>
 
-                    {/* Toggle */}
 
-                    <button
-                      type="button"
-                      disabled={isSaving}
-                      onClick={() =>
-                        handleChannelToggle(
-                          channel.key,
-                          !config.enabled
-                        )
-                      }
-                      className={`relative h-7 w-12 rounded-full transition ${
-                        config.enabled
-                          ? "bg-[#5A3FD6]"
-                          : "bg-slate-300"
-                      } ${
-                        isSaving
-                          ? "cursor-wait opacity-60"
-                          : "cursor-pointer"
-                      }`}
-                      aria-label={`${
-                        config.enabled
-                          ? "Disable"
-                          : "Enable"
-                      } ${channel.label}`}
-                    >
+                    <div>
 
-                      <span
-                        className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow-sm transition ${
-                          config.enabled
-                            ? "left-6"
-                            : "left-1"
-                        }`}
+                      <label className="mb-1.5 block text-[11px] font-semibold text-slate-700">
+                        Access Level
+                      </label>
+
+                      <input
+                        type="text"
+                        value={
+                          accessLevel
+                        }
+                        onChange={(
+                          event
+                        ) =>
+                          setAccessLevel(
+                            event.target.value
+                          )
+                        }
+                        placeholder="Access level"
+                        className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-[12.5px] text-slate-700 outline-none transition focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
                       />
 
-                    </button>
+                    </div>
+
+                  </>
+                )}
+
+
+                {/* ==================================================
+                   MANAGER FIELDS
+                   ================================================== */}
+
+                {role ===
+                  "campaign_manager" && (
+                  <>
+
+                    <div>
+
+                      <label className="mb-1.5 block text-[11px] font-semibold text-slate-700">
+                        Manager ID
+                      </label>
+
+                      <input
+                        type="text"
+                        value={
+                          user.manager_id ??
+                          "Not assigned"
+                        }
+                        disabled
+                        className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-[12.5px] text-slate-500 outline-none"
+                      />
+
+                      <p className="mt-1 text-[9.5px] text-slate-400">
+                        Manager ID is assigned by the administrator.
+                      </p>
+
+                    </div>
+
+
+                    <div>
+
+                      <label className="mb-1.5 block text-[11px] font-semibold text-slate-700">
+                        Assigned Region
+                      </label>
+
+                      <input
+                        type="text"
+                        value={
+                          assignedRegion
+                        }
+                        onChange={(
+                          event
+                        ) =>
+                          setAssignedRegion(
+                            event.target.value
+                          )
+                        }
+                        placeholder="Assigned region"
+                        className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-[12.5px] text-slate-700 outline-none transition focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
+                      />
+
+                    </div>
+
+
+                    <div>
+
+                      <label className="mb-1.5 block text-[11px] font-semibold text-slate-700">
+                        Shift Timing
+                      </label>
+
+                      <input
+                        type="text"
+                        value={
+                          shiftTiming
+                        }
+                        onChange={(
+                          event
+                        ) =>
+                          setShiftTiming(
+                            event.target.value
+                          )
+                        }
+                        placeholder="09:00 AM - 06:00 PM"
+                        className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-[12.5px] text-slate-700 outline-none transition focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
+                      />
+
+                    </div>
+
+                  </>
+                )}
+
+
+                {/* ==================================================
+                   CAMPAIGN PERSON
+                   ================================================== */}
+
+                {role ===
+                  "comms_team" && (
+                  <div>
+
+                    <label className="mb-1.5 block text-[11px] font-semibold text-slate-700">
+                      Manager ID
+                    </label>
+
+                    <input
+                      type="text"
+                      value={
+                        user.manager_id ??
+                        "Not assigned"
+                      }
+                      disabled
+                      className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-[12.5px] text-slate-500 outline-none"
+                    />
+
+                    <p className="mt-1 text-[9.5px] text-slate-400">
+                      Manager assignment is controlled by the administrator.
+                    </p>
 
                   </div>
-                );
-              })}
+                )}
 
-            </div>
-          )}
+              </div>
+            )}
 
-        </div>
-      )}
 
-      {/* ======================================================
-          CHANGE PASSWORD CARD
-      ====================================================== */}
+            {/* ====================================================
+               SAVE BUTTON
+               ==================================================== */}
 
-      {user && (
-        <div className="mt-5 max-w-3xl rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
+            {!loading && (
 
-          <div className="mb-5">
-            <h2 className="text-[16px] font-semibold text-slate-900">
-              Change Password
-            </h2>
+              <div className="mt-6 flex justify-end border-t border-slate-100 pt-4">
 
-            <p className="mt-1 text-[12px] text-slate-500">
-              Change your account password.
-            </p>
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="rounded-xl bg-[#6654E9] px-5 py-2.5 text-[11px] font-semibold text-white shadow-sm transition hover:bg-[#5746D8] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {saving
+                    ? "Saving..."
+                    : "Save Changes"}
+                </button>
+
+              </div>
+
+            )}
+
           </div>
 
-          <form
-            onSubmit={handleChangePassword}
-            className="space-y-4"
-          >
+        </form>
 
-            {/* Current Password */}
 
-            <div>
-              <label
-                htmlFor="current-password"
-                className="mb-1.5 block text-[12px] font-semibold text-slate-600"
-              >
-                Current Password
-              </label>
+        {/* ====================================================
+           ACCOUNT INFORMATION
+           ==================================================== */}
 
-              <input
-                id="current-password"
-                type="password"
-                value={currentPassword}
-                onChange={(e) =>
-                  setCurrentPassword(e.target.value)
-                }
-                placeholder="Enter current password"
-                autoComplete="current-password"
-                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[13px] text-slate-800 outline-none focus:border-[#5A3FD6] focus:ring-2 focus:ring-[#5A3FD6]/20"
-              />
-            </div>
+        <div className="mt-5 rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
 
-            {/* New Password */}
+          <div className="border-b border-slate-100 pb-4">
 
-            <div>
-              <label
-                htmlFor="new-password"
-                className="mb-1.5 block text-[12px] font-semibold text-slate-600"
-              >
-                New Password
-              </label>
+            <p className="text-[14px] font-semibold text-slate-900">
+              Account Information
+            </p>
 
-              <input
-                id="new-password"
-                type="password"
-                value={newPassword}
-                onChange={(e) =>
-                  setNewPassword(e.target.value)
-                }
-                placeholder="Enter new password"
-                autoComplete="new-password"
-                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[13px] text-slate-800 outline-none focus:border-[#5A3FD6] focus:ring-2 focus:ring-[#5A3FD6]/20"
-              />
+            <p className="mt-1 text-[11px] text-slate-500">
+              Basic information about your account.
+            </p>
 
-              <p className="mt-1.5 text-[11px] text-slate-400">
-                Minimum 8 characters.
+          </div>
+
+
+          <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+
+            <div className="rounded-xl bg-slate-50 p-3.5">
+
+              <p className="text-[10px] text-slate-500">
+                Account ID
               </p>
+
+              <p className="mt-1 break-all text-[11px] font-medium text-slate-700">
+                {user.id}
+              </p>
+
             </div>
 
-            {/* Confirm Password */}
 
-            <div>
-              <label
-                htmlFor="confirm-password"
-                className="mb-1.5 block text-[12px] font-semibold text-slate-600"
-              >
-                Confirm New Password
-              </label>
+            <div className="rounded-xl bg-slate-50 p-3.5">
 
-              <input
-                id="confirm-password"
-                type="password"
-                value={confirmPassword}
-                onChange={(e) =>
-                  setConfirmPassword(e.target.value)
-                }
-                placeholder="Confirm new password"
-                autoComplete="new-password"
-                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[13px] text-slate-800 outline-none focus:border-[#5A3FD6] focus:ring-2 focus:ring-[#5A3FD6]/20"
-              />
+              <p className="text-[10px] text-slate-500">
+                Registration Date
+              </p>
+
+              <p className="mt-1 text-[11px] font-medium text-slate-700">
+                {user.registration_date
+                  ? new Date(
+                      user.registration_date
+                    ).toLocaleDateString()
+                  : "—"}
+              </p>
+
             </div>
 
-            {/* Password error */}
 
-            {passwordError && (
-              <div className="rounded-xl border border-rose-200 bg-rose-50 p-3">
-                <p className="text-[12.5px] text-rose-600">
-                  {passwordError}
+            {role ===
+              "campaign_manager" && (
+              <div className="rounded-xl bg-slate-50 p-3.5">
+
+                <p className="text-[10px] text-slate-500">
+                  Assigned Region
                 </p>
+
+                <p className="mt-1 text-[11px] font-medium text-slate-700">
+                  {user.assigned_region ??
+                    "—"}
+                </p>
+
               </div>
             )}
 
-            {/* Password success */}
 
-            {passwordSuccess && (
-              <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
-                <p className="text-[12.5px] text-emerald-700">
-                  {passwordSuccess}
+            {role ===
+              "campaign_manager" && (
+              <div className="rounded-xl bg-slate-50 p-3.5">
+
+                <p className="text-[10px] text-slate-500">
+                  Shift Timing
                 </p>
+
+                <p className="mt-1 text-[11px] font-medium text-slate-700">
+                  {user.shift_timing ??
+                    "—"}
+                </p>
+
               </div>
             )}
 
-            {/* Change Password Button */}
-
-            <div className="flex justify-end pt-2">
-
-              <button
-                type="submit"
-                disabled={changingPassword}
-                className="rounded-xl bg-[#5A3FD6] px-5 py-2.5 text-[12px] font-semibold text-white transition hover:bg-[#4C32C2] disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {changingPassword
-                  ? "Changing Password..."
-                  : "Change Password"}
-              </button>
-
-            </div>
-
-          </form>
+          </div>
 
         </div>
-      )}
+
+      </div>
 
     </div>
   );
