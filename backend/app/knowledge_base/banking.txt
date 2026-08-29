@@ -1,0 +1,7 @@
+Savings Account is used to save money.
+
+Fixed Deposit provides higher interest.
+
+UPI allows instant online payment.
+
+Kisan Credit Card helps farmers get loans.
