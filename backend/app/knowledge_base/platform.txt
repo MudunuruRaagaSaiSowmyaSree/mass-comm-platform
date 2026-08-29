@@ -1,5 +1,0 @@
-﻿CampaignHub is a mass communication platform used to create, manage, and send communication campaigns.
-
-The platform helps administrators create AI-assisted content, manage templates and audiences, use voice assistance, translate content, check communication compliance, view chat history, and generate reports.
-
-The platform supports communication in four languages: English, Hindi, Telugu, and Bengali.
