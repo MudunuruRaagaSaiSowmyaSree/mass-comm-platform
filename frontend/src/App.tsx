@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import "./styles/App.css";
 
 import Login from "./pages/Login";
+import ResetPassword from "./pages/ResetPassword";
 import Register from "./pages/Register";
 import AudienceManager from "./pages/AudienceManager";
 import Dashboard from "./pages/Dashboard";
@@ -31,6 +32,7 @@ import { setAuthToken } from "./api/client";
 
 type Screen =
   | "login"
+  | "reset-password"
   | "register"
   | "app";
 
@@ -41,6 +43,9 @@ function App() {
 
   const [screen, setScreen] =
     useState<Screen>("login");
+
+  const [resetToken, setResetToken] =
+    useState("");
 
   /* ============================================================
      ACTIVE VIEW
@@ -175,19 +180,6 @@ function App() {
 
   /* ============================================================
      NAVIGATION EVENTS
-     ============================================================
-
-     This allows pages such as Pipeline to navigate to another
-     page without directly depending on App's setView function.
-
-     Example:
-
-     window.dispatchEvent(
-       new CustomEvent("navigate-view", {
-         detail: "review",
-       })
-     );
-
      ============================================================ */
 
   useEffect(() => {
@@ -233,6 +225,26 @@ function App() {
         }}
         onSwitchToRegister={() => {
           setScreen("register");
+        }}
+        onResetPassword={(token: string) => {
+          setResetToken(token);
+          setScreen("reset-password");
+        }}
+      />
+    );
+  }
+
+  /* ============================================================
+     RESET PASSWORD SCREEN
+     ============================================================ */
+
+  if (screen === "reset-password") {
+    return (
+      <ResetPassword
+        token={resetToken}
+        onBackToLogin={() => {
+          setResetToken("");
+          setScreen("login");
         }}
       />
     );

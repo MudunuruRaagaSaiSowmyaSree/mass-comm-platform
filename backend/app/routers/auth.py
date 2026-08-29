@@ -1,5 +1,9 @@
+from datetime import datetime, timedelta, timezone
+import secrets
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,6 +25,19 @@ router = APIRouter(
 
 
 # ============================================================
+# UPDATE CURRENT USER REQUEST
+# ============================================================
+
+class UpdateCurrentUserRequest(BaseModel):
+    name: str | None = None
+    phone: str | None = None
+    department: str | None = None
+    access_level: str | None = None
+    assigned_region: str | None = None
+    shift_timing: str | None = None
+
+
+# ============================================================
 # REGISTER
 # ============================================================
 
@@ -29,10 +46,6 @@ async def register(
     data: RegisterRequest,
     db: AsyncSession = Depends(get_db),
 ):
-    # --------------------------------------------------------
-    # Validate role
-    # --------------------------------------------------------
-
     try:
         role = Role(data.role.lower())
     except ValueError:
@@ -43,10 +56,6 @@ async def register(
                 "admin, campaign_manager, comms_team."
             ),
         )
-
-    # --------------------------------------------------------
-    # Check duplicate email
-    # --------------------------------------------------------
 
     result = await db.execute(
         select(User).where(User.email == data.email)
@@ -59,10 +68,6 @@ async def register(
             status_code=400,
             detail="Email is already registered",
         )
-
-    # --------------------------------------------------------
-    # Check duplicate Admin ID
-    # --------------------------------------------------------
 
     if data.admin_id:
         result = await db.execute(
@@ -79,10 +84,6 @@ async def register(
                 detail="Admin ID is already registered",
             )
 
-    # --------------------------------------------------------
-    # Check duplicate Manager ID
-    # --------------------------------------------------------
-
     if data.manager_id:
         result = await db.execute(
             select(User).where(
@@ -98,10 +99,6 @@ async def register(
                 detail="Manager ID is already registered",
             )
 
-    # --------------------------------------------------------
-    # Create user
-    # --------------------------------------------------------
-
     user = User(
         name=data.name.strip(),
         email=data.email,
@@ -110,22 +107,16 @@ async def register(
         role=role,
         is_active=True,
 
-        # Admin fields
         admin_id=data.admin_id,
         department=data.department,
         access_level=data.access_level,
 
-        # Campaign Manager fields
         manager_id=data.manager_id,
         assigned_region=data.assigned_region,
         shift_timing=data.shift_timing,
     )
 
     db.add(user)
-
-    # --------------------------------------------------------
-    # Save user
-    # --------------------------------------------------------
 
     try:
         await db.commit()
@@ -232,13 +223,309 @@ async def get_me(
             else None
         ),
 
-        # Admin information
         "admin_id": current_user.admin_id,
         "department": current_user.department,
         "access_level": current_user.access_level,
 
-        # Campaign Manager information
         "manager_id": current_user.manager_id,
         "assigned_region": current_user.assigned_region,
         "shift_timing": current_user.shift_timing,
+    }
+
+
+# ============================================================
+# UPDATE CURRENT USER
+# ============================================================
+
+@router.put("/me")
+async def update_current_user(
+    data: UpdateCurrentUserRequest,
+    current_user: User = Depends(
+        get_current_user
+    ),
+    db: AsyncSession = Depends(get_db),
+):
+    if data.name is not None:
+        current_user.name = data.name.strip()
+
+    if data.phone is not None:
+        current_user.phone = data.phone.strip()
+
+    if data.department is not None:
+        current_user.department = data.department.strip()
+
+    if data.access_level is not None:
+        current_user.access_level = data.access_level.strip()
+
+    if data.assigned_region is not None:
+        current_user.assigned_region = data.assigned_region.strip()
+
+    if data.shift_timing is not None:
+        current_user.shift_timing = data.shift_timing.strip()
+
+    try:
+        await db.commit()
+        await db.refresh(current_user)
+
+    except Exception as exc:
+        await db.rollback()
+
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Profile update failed: {str(exc)}",
+        )
+
+    role = (
+        current_user.role.value
+        if hasattr(current_user.role, "value")
+        else str(current_user.role)
+    )
+
+    return {
+        "message": "Profile updated successfully",
+        "user": {
+            "id": str(current_user.id),
+            "name": current_user.name,
+            "email": current_user.email,
+            "phone": current_user.phone,
+            "role": role,
+            "is_active": current_user.is_active,
+            "registration_date": (
+                current_user.registration_date.isoformat()
+                if current_user.registration_date
+                else None
+            ),
+
+            "admin_id": current_user.admin_id,
+            "department": current_user.department,
+            "access_level": current_user.access_level,
+
+            "manager_id": current_user.manager_id,
+            "assigned_region": current_user.assigned_region,
+            "shift_timing": current_user.shift_timing,
+        },
+    }
+
+
+# ============================================================
+# CHANGE PASSWORD
+# ============================================================
+
+@router.post("/change-password")
+async def change_password(
+    current_password: str,
+    new_password: str,
+    current_user: User = Depends(
+        get_current_user
+    ),
+    db: AsyncSession = Depends(get_db),
+):
+    if not verify_password(
+        current_password,
+        current_user.hashed_password,
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Current password is incorrect",
+        )
+
+    if len(new_password) < 8:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="New password must be at least 8 characters long",
+        )
+
+    if verify_password(
+        new_password,
+        current_user.hashed_password,
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="New password must be different from the current password",
+        )
+
+    current_user.hashed_password = get_password_hash(
+        new_password
+    )
+
+    current_user.password_reset_token = None
+    current_user.password_reset_expires = None
+
+    try:
+        await db.commit()
+
+    except Exception as exc:
+        await db.rollback()
+
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Password change failed: {str(exc)}",
+        )
+
+    return {
+        "message": "Password changed successfully"
+    }
+
+
+# ============================================================
+# FORGOT PASSWORD
+# ============================================================
+
+@router.post("/forgot-password")
+async def forgot_password(
+    email: str,
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(User).where(
+            User.email == email.strip()
+        )
+    )
+
+    user = result.scalar_one_or_none()
+
+    # Do not reveal whether an email exists.
+    if user is None:
+        return {
+            "message": (
+                "If an account with that email exists, "
+                "a password reset request has been created."
+            )
+        }
+
+    # Generate a secure random reset token.
+    reset_token = secrets.token_urlsafe(32)
+
+    # Token is valid for 30 minutes.
+    reset_expires = datetime.utcnow() + timedelta(
+	minutes=30
+    )
+    user.password_reset_token = reset_token
+    user.password_reset_expires = reset_expires
+
+    try:
+        await db.commit()
+
+    except Exception as exc:
+        await db.rollback()
+
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Password reset request failed: {str(exc)}",
+        )
+
+    # --------------------------------------------------------
+    # DEVELOPMENT RESPONSE
+    # --------------------------------------------------------
+    # In production, do NOT return the reset token.
+    # Send it through email/SMS instead.
+    # --------------------------------------------------------
+
+    return {
+        "message": (
+            "Password reset request created successfully"
+        ),
+        "reset_token": reset_token,
+        "expires_in_minutes": 30,
+    }
+
+
+# ============================================================
+# RESET PASSWORD
+# ============================================================
+
+@router.post("/reset-password")
+async def reset_password(
+    token: str,
+    new_password: str,
+    db: AsyncSession = Depends(get_db),
+):
+    # --------------------------------------------------------
+    # Validate new password
+    # --------------------------------------------------------
+
+    if len(new_password) < 8:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="New password must be at least 8 characters long",
+        )
+
+    # --------------------------------------------------------
+    # Find user by reset token
+    # --------------------------------------------------------
+
+    result = await db.execute(
+        select(User).where(
+            User.password_reset_token == token
+        )
+    )
+
+    user = result.scalar_one_or_none()
+
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired password reset token",
+        )
+
+    # --------------------------------------------------------
+    # Check token expiration
+    # --------------------------------------------------------
+
+    if (
+        user.password_reset_expires is None
+        or user.password_reset_expires
+        < datetime.now(timezone.utc).replace(tzinfo=None)
+    ):
+        user.password_reset_token = None
+        user.password_reset_expires = None
+
+        await db.commit()
+
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired password reset token",
+        )
+
+    # --------------------------------------------------------
+    # Prevent same password
+    # --------------------------------------------------------
+
+    if verify_password(
+        new_password,
+        user.hashed_password,
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="New password must be different from the current password",
+        )
+
+    # --------------------------------------------------------
+    # Update password
+    # --------------------------------------------------------
+
+    user.hashed_password = get_password_hash(
+        new_password
+    )
+
+    # --------------------------------------------------------
+    # Invalidate reset token
+    # --------------------------------------------------------
+
+    user.password_reset_token = None
+    user.password_reset_expires = None
+
+    try:
+        await db.commit()
+
+    except Exception as exc:
+        await db.rollback()
+
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Password reset failed: {str(exc)}",
+        )
+
+    return {
+        "message": "Password reset successfully"
     }

@@ -1,24 +1,104 @@
 import uuid
 from datetime import datetime
-from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+)
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.models.campaign import Campaign, CampaignType, CampaignStatus
-from app.models.user import User, Role
+
+from app.models.campaign import (
+    Campaign,
+    CampaignType,
+    CampaignStatus,
+)
+
+from app.models.user import (
+    User,
+    Role,
+)
+
 from app.core.deps import get_current_user
 from app.core.rbac import require_role
+
 from app.schemas.campaign import CampaignCreate
-from app.schemas.campaign_transition import CampaignTransitionRequest
+
+from app.schemas.campaign_transition import (
+    CampaignTransitionRequest,
+)
 
 
 router = APIRouter(
     prefix="/campaigns",
     tags=["campaigns"],
 )
+
+
+# ============================================================
+# SUPPORTED CHANNELS
+# ============================================================
+
+SUPPORTED_CHANNELS = {
+    "email",
+    "sms",
+    "whatsapp",
+    "push",
+    "web",
+}
+
+
+# ============================================================
+# VALIDATE CHANNELS
+# ============================================================
+
+def validate_channels(
+    channels: list[str],
+) -> list[str]:
+
+    if not channels:
+        raise HTTPException(
+            status_code=422,
+            detail="At least one channel is required",
+        )
+
+    cleaned = [
+        channel.lower().strip()
+        for channel in channels
+        if channel and channel.strip()
+    ]
+
+    if not cleaned:
+        raise HTTPException(
+            status_code=422,
+            detail="At least one channel is required",
+        )
+
+    invalid = [
+        channel
+        for channel in cleaned
+        if channel not in SUPPORTED_CHANNELS
+    ]
+
+    if invalid:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "Invalid channel(s): "
+                + ", ".join(invalid)
+                + ". Allowed channels: "
+                + ", ".join(
+                    sorted(SUPPORTED_CHANNELS)
+                )
+            ),
+        )
+
+    # Remove duplicates while preserving order.
+    return list(dict.fromkeys(cleaned))
 
 
 # ============================================================
@@ -32,13 +112,16 @@ async def create_campaign(
     current_user: User = Depends(
         require_role(
             Role.ADMIN,
-            Role.CAMPAIGN_MANAGER
+            Role.CAMPAIGN_MANAGER,
         )
     ),
 ):
-    # Validate campaign type
+
     try:
-        campaign_type = CampaignType(data.type.lower())
+        campaign_type = CampaignType(
+            data.type.lower().strip()
+        )
+
     except ValueError:
         raise HTTPException(
             status_code=422,
@@ -49,11 +132,19 @@ async def create_campaign(
             ),
         )
 
-    # Convert timezone-aware datetime to naive datetime
+    channels = validate_channels(
+        data.channels
+    )
+
     scheduled_at = data.scheduled_at
 
-    if scheduled_at is not None and scheduled_at.tzinfo is not None:
-        scheduled_at = scheduled_at.replace(tzinfo=None)
+    if (
+        scheduled_at is not None
+        and scheduled_at.tzinfo is not None
+    ):
+        scheduled_at = scheduled_at.replace(
+            tzinfo=None
+        )
 
     campaign = Campaign(
         title=data.title.strip(),
@@ -62,8 +153,9 @@ async def create_campaign(
         status=CampaignStatus.DRAFT,
         created_by=current_user.id,
         target_filters=data.target_filters or {},
-        template_id=None,
+        template_id=data.template_id,
         scheduled_at=scheduled_at,
+        channels=channels,
     )
 
     db.add(campaign)
@@ -77,7 +169,9 @@ async def create_campaign(
 
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to create campaign: {str(exc)}",
+            detail=(
+                f"Failed to create campaign: {str(exc)}"
+            ),
         )
 
     return campaign
@@ -94,7 +188,17 @@ async def list_campaigns(
     status_filter: CampaignStatus | None = None,
     type_filter: CampaignType | None = None,
 ):
+
     stmt = select(Campaign)
+
+    # ========================================================
+    # OWNERSHIP
+    # ========================================================
+
+    if current_user.role != Role.ADMIN:
+        stmt = stmt.where(
+            Campaign.created_by == current_user.id
+        )
 
     if status_filter is not None:
         stmt = stmt.where(
@@ -125,15 +229,29 @@ async def get_campaign(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+
     campaign = await db.get(
         Campaign,
-        campaign_id
+        campaign_id,
     )
 
     if campaign is None:
         raise HTTPException(
             status_code=404,
             detail="Campaign not found",
+        )
+
+    # ========================================================
+    # OWNERSHIP
+    # ========================================================
+
+    if (
+        current_user.role != Role.ADMIN
+        and campaign.created_by != current_user.id
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="You do not have access to this campaign",
         )
 
     return campaign
@@ -151,13 +269,14 @@ async def update_campaign(
     current_user: User = Depends(
         require_role(
             Role.ADMIN,
-            Role.CAMPAIGN_MANAGER
+            Role.CAMPAIGN_MANAGER,
         )
     ),
 ):
+
     campaign = await db.get(
         Campaign,
-        campaign_id
+        campaign_id,
     )
 
     if campaign is None:
@@ -166,14 +285,36 @@ async def update_campaign(
             detail="Campaign not found",
         )
 
-    if campaign.status != CampaignStatus.DRAFT:
+    # ========================================================
+    # OWNERSHIP
+    # ========================================================
+
+    if (
+        current_user.role != Role.ADMIN
+        and campaign.created_by != current_user.id
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="You do not have access to this campaign",
+        )
+
+    if campaign.status not in {
+        CampaignStatus.DRAFT,
+        CampaignStatus.READY,
+    }:
         raise HTTPException(
             status_code=400,
-            detail="Only draft campaigns can be edited",
+            detail=(
+                "Only draft or ready campaigns "
+                "can be edited"
+            ),
         )
 
     try:
-        campaign_type = CampaignType(data.type.lower())
+        campaign_type = CampaignType(
+            data.type.lower().strip()
+        )
+
     except ValueError:
         raise HTTPException(
             status_code=422,
@@ -184,15 +325,101 @@ async def update_campaign(
             ),
         )
 
+    channels = validate_channels(
+        data.channels
+    )
+
     scheduled_at = data.scheduled_at
 
-    if scheduled_at is not None and scheduled_at.tzinfo is not None:
-        scheduled_at = scheduled_at.replace(tzinfo=None)
+    if (
+        scheduled_at is not None
+        and scheduled_at.tzinfo is not None
+    ):
+        scheduled_at = scheduled_at.replace(
+            tzinfo=None
+        )
 
     campaign.title = data.title.strip()
+
     campaign.content = data.content.strip()
+
     campaign.type = campaign_type
-    campaign.target_filters = data.target_filters or {}
+
+    campaign.target_filters = (
+        data.target_filters or {}
+    )
+
+    campaign.template_id = data.template_id
+
+    campaign.scheduled_at = scheduled_at
+
+    campaign.channels = channels
+
+    try:
+        await db.commit()
+        await db.refresh(campaign)
+
+    except Exception as exc:
+        await db.rollback()
+
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                f"Failed to update campaign: {str(exc)}"
+            ),
+        )
+
+    return campaign
+
+
+# ============================================================
+# SET CAMPAIGN SCHEDULE
+# ============================================================
+
+@router.put("/{campaign_id}/schedule")
+async def schedule_campaign(
+    campaign_id: uuid.UUID,
+    scheduled_at: datetime,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(
+        require_role(
+            Role.ADMIN,
+            Role.CAMPAIGN_MANAGER,
+        )
+    ),
+):
+
+    campaign = await db.get(
+        Campaign,
+        campaign_id,
+    )
+
+    if campaign is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Campaign not found",
+        )
+
+    if (
+        current_user.role != Role.ADMIN
+        and campaign.created_by != current_user.id
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="You do not have access to this campaign",
+        )
+
+    if campaign.status != CampaignStatus.READY:
+        raise HTTPException(
+            status_code=400,
+            detail="Only ready campaigns can be scheduled",
+        )
+
+    if scheduled_at.tzinfo is not None:
+        scheduled_at = scheduled_at.replace(
+            tzinfo=None
+        )
+
     campaign.scheduled_at = scheduled_at
 
     await db.commit()
@@ -248,19 +475,33 @@ async def transition_campaign(
     current_user: User = Depends(
         require_role(
             Role.ADMIN,
-            Role.CAMPAIGN_MANAGER
+            Role.CAMPAIGN_MANAGER,
         )
     ),
 ):
+
     campaign = await db.get(
         Campaign,
-        campaign_id
+        campaign_id,
     )
 
     if campaign is None:
         raise HTTPException(
             status_code=404,
             detail="Campaign not found",
+        )
+
+    # ========================================================
+    # OWNERSHIP
+    # ========================================================
+
+    if (
+        current_user.role != Role.ADMIN
+        and campaign.created_by != current_user.id
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="You do not have access to this campaign",
         )
 
     allowed_next = ALLOWED_TRANSITIONS.get(
@@ -278,7 +519,10 @@ async def transition_campaign(
             ),
         )
 
-    # Scheduled campaigns must have scheduled_at
+    # ========================================================
+    # SCHEDULED VALIDATION
+    # ========================================================
+
     if (
         data.new_status == CampaignStatus.SCHEDULED
         and campaign.scheduled_at is None
@@ -291,15 +535,34 @@ async def transition_campaign(
             ),
         )
 
+    # ========================================================
+    # CHANNEL VALIDATION
+    # ========================================================
+
+    if data.new_status in {
+        CampaignStatus.READY,
+        CampaignStatus.SCHEDULED,
+        CampaignStatus.SENDING,
+    }:
+        channels = validate_channels(
+            campaign.channels or []
+        )
+
+        campaign.channels = channels
+
+    # ========================================================
+    # UPDATE STATUS
+    # ========================================================
+
     campaign.status = data.new_status
 
     if data.new_status == CampaignStatus.SENDING:
         campaign.started_at = datetime.utcnow()
 
-    if data.new_status == CampaignStatus.COMPLETED:
-        campaign.completed_at = datetime.utcnow()
-
-    if data.new_status == CampaignStatus.FAILED:
+    if data.new_status in {
+        CampaignStatus.COMPLETED,
+        CampaignStatus.FAILED,
+    }:
         campaign.completed_at = datetime.utcnow()
 
     await db.commit()

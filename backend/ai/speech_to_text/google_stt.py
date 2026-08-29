@@ -33,7 +33,7 @@ ALLOWED_LANGUAGES = {
     "en",
     "hi",
     "te",
-    "bn"
+    "bn",
 }
 
 
@@ -41,13 +41,13 @@ LANGUAGE_NAMES = {
     "en": "English",
     "hi": "Hindi",
     "te": "Telugu",
-    "bn": "Bengali"
+    "bn": "Bengali",
 }
 
 
 def transcribe(
     audio_path: str,
-    language: str | None = None
+    language: str | None = None,
 ) -> tuple[str, str]:
 
     language_instruction = ""
@@ -93,52 +93,166 @@ Return ONLY valid JSON in this format:
 }}
 """
 
-    # Upload audio to Gemini Files API
-    audio_file = client.files.upload(
-        file=audio_path
-    )
+    audio_file = None
 
     try:
+
+        # --------------------------------------------------
+        # Upload audio to Gemini
+        # --------------------------------------------------
+
+        audio_file = client.files.upload(
+            file=audio_path
+        )
+
+        # --------------------------------------------------
+        # Speech-to-text request
+        # --------------------------------------------------
 
         response = client.models.generate_content(
             model=MODEL_NAME,
             contents=[
                 prompt,
-                audio_file
-            ]
+                audio_file,
+            ],
         )
 
-        text = response.text.strip()
+        text = (response.text or "").strip()
 
-        # Remove markdown code fences if Gemini adds them
+        # --------------------------------------------------
+        # Remove markdown code fences
+        # --------------------------------------------------
+
         if text.startswith("```"):
-            text = text.replace("```json", "")
-            text = text.replace("```", "")
+
+            text = text.replace(
+                "```json",
+                ""
+            )
+
+            text = text.replace(
+                "```",
+                ""
+            )
+
             text = text.strip()
+
+        # --------------------------------------------------
+        # Parse JSON
+        # --------------------------------------------------
 
         result = json.loads(text)
 
         transcript = result.get(
             "transcript",
             ""
+        )
+
+        transcript = (
+            transcript
+            if isinstance(transcript, str)
+            else ""
         ).strip()
 
         detected_language = result.get(
             "language",
             "en"
+        )
+
+        detected_language = (
+            detected_language
+            if isinstance(
+                detected_language,
+                str
+            )
+            else "en"
         ).strip().lower()
 
         if detected_language not in ALLOWED_LANGUAGES:
             detected_language = "en"
 
-        return transcript, detected_language
+        return (
+            transcript,
+            detected_language,
+        )
+
+    except Exception as exc:
+
+        error_text = str(exc)
+
+        # --------------------------------------------------
+        # Gemini quota / rate limit
+        # --------------------------------------------------
+
+        if (
+            "429" in error_text
+            or "RESOURCE_EXHAUSTED" in error_text
+            or "quota" in error_text.lower()
+        ):
+
+            print(
+                "WARNING: Gemini speech-to-text quota "
+                "has been exhausted."
+            )
+
+            print(
+                "Voice transcription is temporarily "
+                "unavailable."
+            )
+
+            return "", (
+                language
+                if language in ALLOWED_LANGUAGES
+                else "en"
+            )
+
+        # --------------------------------------------------
+        # Invalid JSON
+        # --------------------------------------------------
+
+        if isinstance(
+            exc,
+            json.JSONDecodeError
+        ):
+
+            print(
+                "WARNING: Gemini returned invalid "
+                "speech-to-text JSON."
+            )
+
+            return "", (
+                language
+                if language in ALLOWED_LANGUAGES
+                else "en"
+            )
+
+        # --------------------------------------------------
+        # Other transcription errors
+        # --------------------------------------------------
+
+        print(
+            f"WARNING: Speech transcription failed: {exc}"
+        )
+
+        return "", (
+            language
+            if language in ALLOWED_LANGUAGES
+            else "en"
+        )
 
     finally:
 
+        # --------------------------------------------------
         # Delete temporary Gemini file
-        try:
-            client.files.delete(
-                name=audio_file.name
-            )
-        except Exception:
-            pass
+        # --------------------------------------------------
+
+        if audio_file is not None:
+
+            try:
+
+                client.files.delete(
+                    name=audio_file.name
+                )
+
+            except Exception:
+                pass

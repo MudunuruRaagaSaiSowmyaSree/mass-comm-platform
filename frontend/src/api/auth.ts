@@ -38,6 +38,42 @@ export interface LoginResponse {
   token_type: string;
 }
 
+export interface UpdateCurrentUserPayload {
+  name?: string;
+  phone?: string;
+  department?: string;
+  access_level?: string;
+  assigned_region?: string;
+  shift_timing?: string;
+}
+
+export interface ChangePasswordPayload {
+  current_password: string;
+  new_password: string;
+}
+
+// ============================================================
+// FORGOT PASSWORD PAYLOAD
+// ============================================================
+
+export interface ForgotPasswordResponse {
+  message: string;
+  reset_token?: string;
+  expires_in_minutes?: number;
+}
+
+// ============================================================
+// RESET PASSWORD PAYLOAD
+// ============================================================
+
+export interface ResetPasswordResponse {
+  message: string;
+}
+
+// ============================================================
+// REGISTER
+// ============================================================
+
 export async function registerUser(
   data: RegisterPayload
 ) {
@@ -48,6 +84,10 @@ export async function registerUser(
 
   return response.data;
 }
+
+// ============================================================
+// LOGIN
+// ============================================================
 
 export async function loginUser(
   email: string,
@@ -63,7 +103,8 @@ export async function loginUser(
     form,
     {
       headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
+        "Content-Type":
+          "application/x-www-form-urlencoded",
       },
     }
   );
@@ -71,10 +112,95 @@ export async function loginUser(
   return response.data;
 }
 
+// ============================================================
+// CURRENT USER
+// ============================================================
+
 export async function fetchCurrentUser(): Promise<CurrentUser> {
-  const response = await apiClient.get<CurrentUser>(
-    "/auth/me"
+  const response =
+    await apiClient.get<CurrentUser>(
+      "/auth/me"
+    );
+
+  return response.data;
+}
+
+// ============================================================
+// UPDATE CURRENT USER
+// ============================================================
+
+export async function updateCurrentUser(
+  data: UpdateCurrentUserPayload
+) {
+  const response = await apiClient.put(
+    "/auth/me",
+    data
   );
+
+  return response.data;
+}
+
+// ============================================================
+// CHANGE PASSWORD
+// ============================================================
+
+export async function changePassword(
+  data: ChangePasswordPayload
+) {
+  const response = await apiClient.post(
+    "/auth/change-password",
+    null,
+    {
+      params: {
+        current_password: data.current_password,
+        new_password: data.new_password,
+      },
+    }
+  );
+
+  return response.data;
+}
+
+// ============================================================
+// FORGOT PASSWORD
+// ============================================================
+
+export async function forgotPassword(
+  email: string
+): Promise<ForgotPasswordResponse> {
+  const response =
+    await apiClient.post<ForgotPasswordResponse>(
+      "/auth/forgot-password",
+      null,
+      {
+        params: {
+          email: email.trim(),
+        },
+      }
+    );
+
+  return response.data;
+}
+
+// ============================================================
+// RESET PASSWORD
+// ============================================================
+
+export async function resetPassword(
+  token: string,
+  newPassword: string
+): Promise<ResetPasswordResponse> {
+  const response =
+    await apiClient.post<ResetPasswordResponse>(
+      "/auth/reset-password",
+      null,
+      {
+        params: {
+          token,
+          new_password: newPassword,
+        },
+      }
+    );
 
   return response.data;
 }

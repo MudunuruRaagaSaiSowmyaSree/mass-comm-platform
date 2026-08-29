@@ -1,9 +1,13 @@
 import { useState } from "react";
 import { setAuthToken } from "../api/client";
-import { loginUser, fetchCurrentUser } from "../api/auth";
+import {
+  loginUser,
+  fetchCurrentUser,
+  forgotPassword,
+} from "../api/auth";
 
 /* ------------------------------------------------------------------ */
-/*  Small inline icon set                                               */
+/*  Small inline icon set                                             */
 /* ------------------------------------------------------------------ */
 
 function Icon({
@@ -14,7 +18,11 @@ function Icon({
   className?: string;
 }) {
   return (
-    <svg viewBox="0 0 24 24" fill="none" className={className}>
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      className={className}
+    >
       <path
         d={path}
         stroke="currentColor"
@@ -70,16 +78,24 @@ const paths = {
   eyeOff:
     "M3 3l18 18M10.6 10.6a3 3 0 0 0 4.2 4.2M9.9 5.1A10.6 10.6 0 0 1 12 5c6.5 0 10 7 10 7a13.8 13.8 0 0 1-3.2 4.1M6.5 6.5C4 8.1 2 12 2 12a13.9 13.9 0 0 0 5.1 5.6",
 
-  arrowRight: "M5 12h14M13 6l6 6-6 6",
+  arrowRight:
+    "M5 12h14M13 6l6 6-6 6",
 
-  chevronDown: "M6 9l6 6 6-6",
+  arrowLeft:
+    "M19 12H5M11 18l-6-6 6-6",
+
+  chevronDown:
+    "M6 9l6 6 6-6",
 
   phone:
     "M4 5c0-1 1-2 2-2h2l2 5-2 1.5A11 11 0 0 0 13.5 15l1.5-2 5 2v2c0 1-1 2-2 2C10 19 4 13 4 5Z",
+
+  mail:
+    "M4 6h16v12H4V6Zm0 0 8 6 8-6",
 };
 
 /* ------------------------------------------------------------------ */
-/*  Feature bubble                                                     */
+/* Feature bubble                                                     */
 /* ------------------------------------------------------------------ */
 
 function FeatureBubble({
@@ -103,7 +119,10 @@ function FeatureBubble({
         className="flex h-9 w-9 items-center justify-center rounded-xl shadow-sm"
         style={{ backgroundColor: color }}
       >
-        <Icon path={icon} className="h-4 w-4 text-white" />
+        <Icon
+          path={icon}
+          className="h-4 w-4 text-white"
+        />
       </div>
 
       <p className="text-[12px] font-semibold leading-tight text-slate-800">
@@ -118,7 +137,7 @@ function FeatureBubble({
 }
 
 /* ------------------------------------------------------------------ */
-/*  Brand panel                                                        */
+/* Brand panel                                                        */
 /* ------------------------------------------------------------------ */
 
 function BrandPanel() {
@@ -172,7 +191,10 @@ function BrandPanel() {
 
       <div className="relative z-10 flex items-center gap-2.5">
         <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-[#7C6CF0] to-[#5A3FD6] shadow-md">
-          <Icon path={paths.mic} className="h-4 w-4 text-white" />
+          <Icon
+            path={paths.mic}
+            className="h-4 w-4 text-white"
+          />
         </div>
 
         <div>
@@ -190,7 +212,9 @@ function BrandPanel() {
         <h1 className="text-[27px] font-extrabold leading-tight text-slate-900">
           Your Voice.
           <br />
-          <span className="text-[#5A3FD6]">Our Knowledge.</span>
+          <span className="text-[#5A3FD6]">
+            Our Knowledge.
+          </span>
           <br />
           <span className="text-[#5A3FD6]">
             Smarter Communities.
@@ -254,7 +278,10 @@ function BrandPanel() {
         />
 
         <div className="absolute left-1/2 top-1/2 flex h-[76px] w-[76px] -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-gradient-to-br from-[#7C6CF0] to-[#5A3FD6] shadow-lg shadow-[#6C5CE7]/30">
-          <Icon path={paths.mic} className="h-7 w-7 text-white" />
+          <Icon
+            path={paths.mic}
+            className="h-7 w-7 text-white"
+          />
         </div>
       </div>
 
@@ -285,7 +312,10 @@ function BrandPanel() {
             key={b.title}
             className="flex flex-col items-center gap-1 text-center"
           >
-            <Icon path={b.icon} className="h-4 w-4 text-[#6C5CE7]" />
+            <Icon
+              path={b.icon}
+              className="h-4 w-4 text-[#6C5CE7]"
+            />
 
             <p className="text-[10.5px] font-semibold leading-tight text-slate-700">
               {b.title}
@@ -302,7 +332,7 @@ function BrandPanel() {
 }
 
 /* ------------------------------------------------------------------ */
-/*  Languages                                                          */
+/* Languages                                                          */
 /* ------------------------------------------------------------------ */
 
 const LANGUAGES = [
@@ -313,59 +343,256 @@ const LANGUAGES = [
 ];
 
 /* ------------------------------------------------------------------ */
-/*  Sign in panel                                                      */
+/* Forgot Password Panel                                              */
+/* ------------------------------------------------------------------ */
+
+function ForgotPasswordPanel({
+  onBackToLogin,
+  onResetPassword,
+}: {
+  onBackToLogin: () => void;
+  onResetPassword: (token: string) => void;
+}) {
+  const [email, setEmail] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(
+    null
+  );
+  const [success, setSuccess] = useState(false);
+  const [resetToken, setResetToken] = useState<
+    string | null
+  >(null);
+
+  async function handleSubmit(
+    e: React.FormEvent
+  ) {
+    e.preventDefault();
+
+    setError(null);
+    setSuccess(false);
+    setResetToken(null);
+    setSubmitting(true);
+
+    try {
+      const response = await forgotPassword(email);
+
+      setSuccess(true);
+
+      /*
+       * The backend currently returns the reset token
+       * for development/testing.
+       *
+       * Later, this will be replaced by an email link.
+       */
+      if (response.reset_token) {
+        setResetToken(response.reset_token);
+        onResetPassword(response.reset_token);
+      }
+    } catch (err: any) {
+      console.error(
+        "Forgot password failed:",
+        err
+      );
+
+      const detail =
+        err?.response?.data?.detail;
+
+      if (typeof detail === "string") {
+        setError(detail);
+      } else {
+        setError(
+          err?.message ||
+            "Unable to process the password reset request."
+        );
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="flex w-full flex-1 flex-col items-center justify-center px-6 py-10 lg:w-[54%]">
+      <div className="w-full max-w-[380px]">
+        <div className="text-center">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-[#f0edff] text-[#5A3FD6]">
+            <Icon
+              path={paths.lock}
+              className="h-6 w-6"
+            />
+          </div>
+
+          <h2 className="mt-5 text-[24px] font-extrabold text-slate-900">
+            Forgot Password?
+          </h2>
+
+          <p className="mt-1.5 text-[13px] leading-relaxed text-slate-500">
+            Enter your registered email address and
+            we&apos;ll help you reset your password.
+          </p>
+        </div>
+
+        <form
+          onSubmit={handleSubmit}
+          className="mt-7 space-y-4"
+        >
+          <div className="relative">
+            <Icon
+              path={paths.mail}
+              className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"
+            />
+
+            <input
+              type="email"
+              required
+              value={email}
+              onChange={(e) =>
+                setEmail(e.target.value)
+              }
+              placeholder="Email address"
+              className="w-full rounded-xl border border-slate-200 bg-slate-50/60 py-3 pl-11 pr-3.5 text-[13.5px] text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-[#6C5CE7] focus:bg-white focus:ring-2 focus:ring-[#6C5CE7]/20"
+            />
+          </div>
+
+          {error && (
+            <div className="rounded-xl bg-rose-50 px-3 py-2.5 text-[12.5px] text-rose-600">
+              {error}
+            </div>
+          )}
+
+          {success && (
+            <div className="rounded-xl bg-emerald-50 px-3 py-3 text-[12.5px] text-emerald-700">
+              <p className="font-semibold">
+                Password reset request created.
+              </p>
+
+              <p className="mt-1 leading-relaxed">
+                If an account exists with this email,
+                a password reset link has been
+                generated.
+              </p>
+
+              {resetToken && (
+                <div className="mt-3 rounded-lg bg-white p-2.5">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                    Development Reset Token
+                  </p>
+
+                  <p className="mt-1 break-all font-mono text-[11px] text-slate-700">
+                    {resetToken}
+                  </p>
+
+                  <p className="mt-2 text-[10px] text-slate-400">
+                    This is temporary for development.
+                    Later we will send the reset link
+                    by email.
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
+          <button
+            type="submit"
+            disabled={submitting}
+            className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#7C6CF0] to-[#5A3FD6] py-3 text-[13.5px] font-semibold text-white shadow-md shadow-[#6C5CE7]/30 transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {submitting
+              ? "Sending..."
+              : "Send Reset Link"}
+
+            {!submitting && (
+              <Icon
+                path={paths.arrowRight}
+                className="h-4 w-4"
+              />
+            )}
+          </button>
+        </form>
+
+        <button
+          type="button"
+          onClick={onBackToLogin}
+          className="mx-auto mt-5 flex items-center gap-2 text-[12.5px] font-semibold text-[#6C5CE7] hover:underline"
+        >
+          <Icon
+            path={paths.arrowLeft}
+            className="h-4 w-4"
+          />
+
+          Back to Login
+        </button>
+      </div>
+
+      <p className="mt-8 flex items-center gap-1.5 text-[11px] text-slate-400">
+        <Icon
+          path={paths.shield}
+          className="h-3.5 w-3.5"
+        />
+
+        Secure. Private. Built for Rural India.
+      </p>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Sign in panel                                                      */
 /* ------------------------------------------------------------------ */
 
 function SignInPanel({
   onSuccess,
   onSwitchToRegister,
+  onForgotPassword,
 }: {
   onSuccess: (name: string) => void;
   onSwitchToRegister: () => void;
+  onForgotPassword: () => void;
 }) {
-  const [identifier, setIdentifier] = useState("");
-  const [password, setPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
-  const [remember, setRemember] = useState(false);
-  const [language, setLanguage] = useState("en");
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [identifier, setIdentifier] =
+    useState("");
 
-  async function handleSubmit(e: React.FormEvent) {
+  const [password, setPassword] =
+    useState("");
+
+  const [showPassword, setShowPassword] =
+    useState(false);
+
+  const [remember, setRemember] =
+    useState(false);
+
+  const [language, setLanguage] =
+    useState("en");
+
+  const [submitting, setSubmitting] =
+    useState(false);
+
+  const [error, setError] =
+    useState<string | null>(null);
+
+  async function handleSubmit(
+    e: React.FormEvent
+  ) {
     e.preventDefault();
 
     setError(null);
     setSubmitting(true);
 
     try {
-      /* ------------------------------------------------------------ */
-      /* 1. Login                                                     */
-      /* ------------------------------------------------------------ */
-
       const data = await loginUser(
         identifier.trim(),
         password
       );
 
-      /* ------------------------------------------------------------ */
-      /* 2. Save access token                                         */
-      /* ------------------------------------------------------------ */
-
       if (!data.access_token) {
-        throw new Error("Login succeeded but no access token was returned.");
+        throw new Error(
+          "Login succeeded but no access token was returned."
+        );
       }
 
       setAuthToken(data.access_token);
 
-      /* ------------------------------------------------------------ */
-      /* 3. Get current user                                         */
-      /* ------------------------------------------------------------ */
-
-      const currentUser = await fetchCurrentUser();
-
-      /* ------------------------------------------------------------ */
-      /* 4. Continue into application                                */
-      /* ------------------------------------------------------------ */
+      const currentUser =
+        await fetchCurrentUser();
 
       const displayName =
         currentUser.name?.trim() ||
@@ -374,14 +601,22 @@ function SignInPanel({
 
       onSuccess(displayName);
     } catch (err: any) {
-      console.error("Login failed:", err);
+      console.error(
+        "Login failed:",
+        err
+      );
 
-      const detail = err?.response?.data?.detail;
+      const detail =
+        err?.response?.data?.detail;
 
       if (typeof detail === "string") {
         setError(detail);
-      } else if (err?.response?.status === 401) {
-        setError("Invalid username or password.");
+      } else if (
+        err?.response?.status === 401
+      ) {
+        setError(
+          "Invalid username or password."
+        );
       } else {
         setError(
           err?.message ||
@@ -409,7 +644,10 @@ function SignInPanel({
           </p>
         </div>
 
-        <form onSubmit={handleSubmit} className="mt-7 space-y-3.5">
+        <form
+          onSubmit={handleSubmit}
+          className="mt-7 space-y-3.5"
+        >
           <div className="relative">
             <Icon
               path={paths.user}
@@ -420,7 +658,9 @@ function SignInPanel({
               type="text"
               required
               value={identifier}
-              onChange={(e) => setIdentifier(e.target.value)}
+              onChange={(e) =>
+                setIdentifier(e.target.value)
+              }
               placeholder="Username or Email"
               className="w-full rounded-xl border border-slate-200 bg-slate-50/60 py-3 pl-11 pr-3.5 text-[13.5px] text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-[#6C5CE7] focus:bg-white focus:ring-2 focus:ring-[#6C5CE7]/20"
             />
@@ -433,17 +673,27 @@ function SignInPanel({
             />
 
             <input
-              type={showPassword ? "text" : "password"}
+              type={
+                showPassword
+                  ? "text"
+                  : "password"
+              }
               required
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              onChange={(e) =>
+                setPassword(e.target.value)
+              }
               placeholder="Password"
               className="w-full rounded-xl border border-slate-200 bg-slate-50/60 py-3 pl-11 pr-11 text-[13.5px] text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-[#6C5CE7] focus:bg-white focus:ring-2 focus:ring-[#6C5CE7]/20"
             />
 
             <button
               type="button"
-              onClick={() => setShowPassword((v) => !v)}
+              onClick={() =>
+                setShowPassword(
+                  (v) => !v
+                )
+              }
               className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
               aria-label={
                 showPassword
@@ -468,7 +718,9 @@ function SignInPanel({
                 type="checkbox"
                 checked={remember}
                 onChange={(e) =>
-                  setRemember(e.target.checked)
+                  setRemember(
+                    e.target.checked
+                  )
                 }
                 className="h-3.5 w-3.5 rounded border-slate-300 text-[#6C5CE7] focus:ring-[#6C5CE7]"
               />
@@ -476,12 +728,13 @@ function SignInPanel({
               Remember me
             </label>
 
-            <a
-              href="#"
+            <button
+              type="button"
+              onClick={onForgotPassword}
               className="font-medium text-[#6C5CE7] hover:underline"
             >
               Forgot Password?
-            </a>
+            </button>
           </div>
 
           {error && (
@@ -495,7 +748,9 @@ function SignInPanel({
             disabled={submitting}
             className="flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#7C6CF0] to-[#5A3FD6] py-3 text-[13.5px] font-semibold text-white shadow-md shadow-[#6C5CE7]/30 transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {submitting ? "Signing in..." : "Login"}
+            {submitting
+              ? "Signing in..."
+              : "Login"}
 
             {!submitting && (
               <Icon
@@ -647,25 +902,44 @@ function SignInPanel({
 }
 
 /* ------------------------------------------------------------------ */
-/*  Page shell                                                         */
+/* Page shell                                                         */
 /* ------------------------------------------------------------------ */
 
 export default function Login({
   onSuccess,
   onSwitchToRegister,
+  onResetPassword,
 }: {
   onSuccess: (name: string) => void;
   onSwitchToRegister: () => void;
+  onResetPassword: (token: string) => void;
 }) {
+  const [showForgotPassword, setShowForgotPassword] =
+    useState(false);
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-[#8B7CF6] to-[#4C3AC9] p-4 lg:p-8">
       <div className="flex w-full max-w-[980px] overflow-hidden rounded-[28px] bg-white shadow-2xl">
         <BrandPanel />
 
-        <SignInPanel
-          onSuccess={onSuccess}
-          onSwitchToRegister={onSwitchToRegister}
-        />
+        {showForgotPassword ? (
+          <ForgotPasswordPanel
+          onBackToLogin={() =>
+            setShowForgotPassword(false)
+          }
+          onResetPassword={onResetPassword}
+          />
+        ) : (
+          <SignInPanel
+            onSuccess={onSuccess}
+            onSwitchToRegister={
+              onSwitchToRegister
+            }
+            onForgotPassword={() => {
+              setShowForgotPassword(true);
+            }}
+          />
+        )}
       </div>
     </div>
   );

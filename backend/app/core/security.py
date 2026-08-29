@@ -4,22 +4,40 @@ from jose import JWTError, jwt
 from passlib.context import CryptContext
 
 
-# Password hashing
+# ============================================================
+# PASSWORD HASHING
+# ============================================================
+
 pwd_context = CryptContext(
     schemes=["bcrypt"],
     deprecated="auto",
 )
 
 
-# JWT settings
-SECRET_KEY = "change-this-secret-key"
+# ============================================================
+# JWT SETTINGS
+# ============================================================
+#
+# IMPORTANT:
+# Replace the value below with the long random secret key
+# that you created.
+#
+# Example:
+# SECRET_KEY = "your-long-random-secret-key-here"
+#
+# DO NOT share this secret key publicly.
+# ============================================================
+
+SECRET_KEY = "8fK3mQ9xV2pL7zR4nT6wY1cB5sD0hG8jN3vX6qP9"
+
 ALGORITHM = "HS256"
+
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
 
-# --------------------------------------------------
-# Password functions
-# --------------------------------------------------
+# ============================================================
+# PASSWORD FUNCTIONS
+# ============================================================
 
 def hash_password(password: str) -> str:
     return pwd_context.hash(password)
@@ -39,9 +57,9 @@ def verify_password(
     )
 
 
-# --------------------------------------------------
-# JWT functions
-# --------------------------------------------------
+# ============================================================
+# JWT FUNCTIONS
+# ============================================================
 
 def create_access_token(
     data: dict,
@@ -57,7 +75,9 @@ def create_access_token(
             minutes=ACCESS_TOKEN_EXPIRE_MINUTES
         )
 
-    to_encode.update({"exp": expire})
+    to_encode.update({
+        "exp": expire
+    })
 
     encoded_jwt = jwt.encode(
         to_encode,
@@ -68,7 +88,9 @@ def create_access_token(
     return encoded_jwt
 
 
-def decode_access_token(token: str) -> dict | None:
+def decode_access_token(
+    token: str,
+) -> dict | None:
 
     try:
         payload = jwt.decode(

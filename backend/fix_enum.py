@@ -1,42 +1,59 @@
 import asyncio
-import asyncpg
 
-DATABASE_URL = "postgresql://masscomm:masscomm_pass@localhost:5432/masscomm"
+from sqlalchemy import text
+from app.database import engine
 
-async def main():
-    conn = await asyncpg.connect(DATABASE_URL)
 
-    try:
-        await conn.execute("""
-            ALTER TYPE campaignstatus RENAME TO campaignstatus_old;
-        """)
+async def fix_recipient_status_enum():
+    async with engine.begin() as conn:
+        print("Connected to PostgreSQL.")
 
-        await conn.execute("""
-            CREATE TYPE campaignstatus AS ENUM (
-                'draft',
-                'review',
-                'ready',
-                'scheduled',
-                'sending',
-                'completed',
-                'failed'
-            );
-        """)
+        await conn.execute(
+            text(
+                """
+                ALTER TYPE recipientstatus
+                ADD VALUE IF NOT EXISTS 'pending';
+                """
+            )
+        )
 
-        await conn.execute("""
-            ALTER TABLE campaigns
-            ALTER COLUMN status
-            TYPE campaignstatus
-            USING LOWER(status::text)::campaignstatus;
-        """)
+        await conn.execute(
+            text(
+                """
+                ALTER TYPE recipientstatus
+                ADD VALUE IF NOT EXISTS 'sent';
+                """
+            )
+        )
 
-        await conn.execute("""
-            DROP TYPE campaignstatus_old;
-        """)
+        await conn.execute(
+            text(
+                """
+                ALTER TYPE recipientstatus
+                ADD VALUE IF NOT EXISTS 'failed';
+                """
+            )
+        )
 
-        print("campaignstatus enum fixed successfully.")
+        result = await conn.execute(
+            text(
+                """
+                SELECT enumlabel
+                FROM pg_enum
+                WHERE enumtypid = 'recipientstatus'::regtype
+                ORDER BY enumsortorder;
+                """
+            )
+        )
 
-    finally:
-        await conn.close()
+        values = [row[0] for row in result]
 
-asyncio.run(main())
+        print("recipientstatus values:")
+        for value in values:
+            print(f"  - {value}")
+
+        print("Enum fix completed successfully.")
+
+
+if __name__ == "__main__":
+    asyncio.run(fix_recipient_status_enum())

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { sendChatMessage } from "../api/chat";
+import { queueOfflineQuery } from "../offline/offlineQueue";
 
 interface ChatProps {
   userId: string | null;
@@ -19,6 +20,7 @@ export default function Chat({ userId }: ChatProps) {
   const [sources, setSources] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [offlineMessage, setOfflineMessage] = useState("");
 
   async function handleSend() {
     if (!userId) {
@@ -32,11 +34,36 @@ export default function Chat({ userId }: ChatProps) {
 
     setLoading(true);
     setError("");
+    setOfflineMessage("");
+
+    const currentQuery = query.trim();
 
     try {
+      /*
+       * If the browser has no internet connection,
+       * save the query to IndexedDB.
+       */
+      if (!navigator.onLine) {
+        await queueOfflineQuery(
+          userId,
+          currentQuery,
+          language
+        );
+
+        setOfflineMessage(
+          "You are offline. Your question has been saved and will be sent when the internet connection is restored."
+        );
+
+        setQuery("");
+        return;
+      }
+
+      /*
+       * Normal online request.
+       */
       const response = await sendChatMessage(
         userId,
-        query.trim(),
+        currentQuery,
         language
       );
 
@@ -46,17 +73,45 @@ export default function Chat({ userId }: ChatProps) {
     } catch (err: any) {
       console.error("Chat error:", err);
 
-      setError(
-        err?.response?.data?.detail ??
-          "Unable to get a response from the AI assistant."
-      );
+      /*
+       * If the request fails because of a network issue,
+       * save the query offline.
+       */
+      try {
+        await queueOfflineQuery(
+          userId,
+          currentQuery,
+          language
+        );
+
+        setOfflineMessage(
+          "Your question could not be sent. It has been saved and will be synchronized later."
+        );
+
+        setQuery("");
+      } catch (queueError) {
+        console.error(
+          "Offline queue error:",
+          queueError
+        );
+
+        setError(
+          err?.response?.data?.detail ??
+            "Unable to get a response from the AI assistant."
+        );
+      }
     } finally {
       setLoading(false);
     }
   }
 
-  function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
-    if (e.key === "Enter" && !e.shiftKey) {
+  function handleKeyDown(
+    e: React.KeyboardEvent<HTMLTextAreaElement>
+  ) {
+    if (
+      e.key === "Enter" &&
+      !e.shiftKey
+    ) {
       e.preventDefault();
       handleSend();
     }
@@ -66,18 +121,29 @@ export default function Chat({ userId }: ChatProps) {
     <div className="flex flex-1 flex-col overflow-hidden bg-slate-50">
       {/* Header */}
       <div className="border-b border-slate-200 bg-white px-8 py-5">
-        <h1 className="text-[22px] font-bold text-slate-900">
-          AI Chat Assistant
-        </h1>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-[22px] font-bold text-slate-900">
+              AI Chat Assistant
+            </h1>
 
-        <p className="mt-1 text-[13px] text-slate-500">
-          Ask questions and get AI-powered answers from your knowledge base.
-        </p>
+            <p className="mt-1 text-[13px] text-slate-500">
+              Ask questions and get AI-powered answers from your knowledge base.
+            </p>
+          </div>
+
+          {!navigator.onLine && (
+            <div className="rounded-full bg-amber-100 px-3 py-1.5 text-[11px] font-semibold text-amber-700">
+              Offline Mode
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Chat area */}
       <div className="flex-1 overflow-y-auto px-8 py-6">
         <div className="mx-auto max-w-4xl">
+
           {!answer && !loading && (
             <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm">
               <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-[#EDE9FE] text-2xl">
@@ -89,8 +155,8 @@ export default function Chat({ userId }: ChatProps) {
               </h2>
 
               <p className="mt-2 text-[13px] text-slate-500">
-                Ask something about your campaign, audience, templates,
-                communication strategy, or available information.
+                Ask something about agriculture, government schemes,
+                healthcare, banking, weather, or other available information.
               </p>
             </div>
           )}
@@ -98,6 +164,7 @@ export default function Chat({ userId }: ChatProps) {
           {/* User question */}
           {answer && (
             <div className="space-y-5">
+
               <div className="flex justify-end">
                 <div className="max-w-2xl rounded-2xl rounded-br-md bg-[#5A3FD6] px-5 py-3.5 text-[13.5px] text-white shadow-sm">
                   <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-white/60">
@@ -105,7 +172,7 @@ export default function Chat({ userId }: ChatProps) {
                   </p>
 
                   <p className="whitespace-pre-wrap">
-                    Previous question
+                    Your question
                   </p>
                 </div>
               </div>
@@ -113,6 +180,7 @@ export default function Chat({ userId }: ChatProps) {
               {/* Assistant response */}
               <div className="flex justify-start">
                 <div className="max-w-3xl rounded-2xl rounded-bl-md border border-slate-200 bg-white px-5 py-4 shadow-sm">
+
                   <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-[#5A3FD6]">
                     AI Assistant
                   </p>
@@ -123,19 +191,22 @@ export default function Chat({ userId }: ChatProps) {
 
                   {sources.length > 0 && (
                     <div className="mt-4 border-t border-slate-100 pt-3">
+
                       <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
                         Sources
                       </p>
 
                       <div className="mt-2 space-y-1">
-                        {sources.map((source, index) => (
-                          <p
-                            key={index}
-                            className="text-[11.5px] text-slate-500"
-                          >
-                            • {source}
-                          </p>
-                        ))}
+                        {sources.map(
+                          (source, index) => (
+                            <p
+                              key={index}
+                              className="text-[11.5px] text-slate-500"
+                            >
+                              • {source}
+                            </p>
+                          )
+                        )}
                       </div>
                     </div>
                   )}
@@ -144,14 +215,25 @@ export default function Chat({ userId }: ChatProps) {
             </div>
           )}
 
+          {/* Loading */}
           {loading && (
             <div className="mt-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
               <p className="text-[13px] text-slate-500">
-                AI Assistant is thinking…
+                AI Assistant is thinking...
               </p>
             </div>
           )}
 
+          {/* Offline queue success */}
+          {offlineMessage && (
+            <div className="mt-5 rounded-xl border border-amber-200 bg-amber-50 p-4">
+              <p className="text-[13px] text-amber-700">
+                {offlineMessage}
+              </p>
+            </div>
+          )}
+
+          {/* Error */}
           {error && (
             <div className="mt-5 rounded-xl border border-rose-200 bg-rose-50 p-4">
               <p className="text-[13px] text-rose-600">
@@ -165,6 +247,7 @@ export default function Chat({ userId }: ChatProps) {
       {/* Input */}
       <div className="border-t border-slate-200 bg-white px-8 py-4">
         <div className="mx-auto max-w-4xl">
+
           <div className="mb-3 flex items-center gap-2">
             <label className="text-[12px] font-semibold text-slate-600">
               Response language
@@ -172,11 +255,16 @@ export default function Chat({ userId }: ChatProps) {
 
             <select
               value={language}
-              onChange={(e) => setLanguage(e.target.value)}
+              onChange={(e) =>
+                setLanguage(e.target.value)
+              }
               className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-[12px] text-slate-700 outline-none focus:ring-2 focus:ring-[#5A3FD6]"
             >
               {LANGUAGES.map((item) => (
-                <option key={item.value} value={item.value}>
+                <option
+                  key={item.value}
+                  value={item.value}
+                >
                   {item.label}
                 </option>
               ))}
@@ -184,21 +272,36 @@ export default function Chat({ userId }: ChatProps) {
           </div>
 
           <div className="flex items-end gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-3 shadow-sm">
+
             <textarea
               value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              onChange={(e) =>
+                setQuery(e.target.value)
+              }
               onKeyDown={handleKeyDown}
-              placeholder="Ask the AI assistant..."
+              placeholder={
+                navigator.onLine
+                  ? "Ask the AI assistant..."
+                  : "Ask your question. It will be saved offline..."
+              }
               rows={2}
               className="flex-1 resize-none bg-transparent px-2 py-1 text-[13.5px] text-slate-800 outline-none placeholder:text-slate-400"
             />
 
             <button
               onClick={handleSend}
-              disabled={loading || !query.trim() || !userId}
+              disabled={
+                loading ||
+                !query.trim() ||
+                !userId
+              }
               className="rounded-xl bg-[#5A3FD6] px-5 py-3 text-[13px] font-semibold text-white transition hover:bg-[#4C32C2] disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {loading ? "Sending..." : "Send"}
+              {loading
+                ? "Sending..."
+                : navigator.onLine
+                  ? "Send"
+                  : "Save Offline"}
             </button>
           </div>
 

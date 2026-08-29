@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.models.chat_history import ChatHistory
+from app.models.campaign import Campaign
 from app.rag.search import retrieve_context
 from app.llm.gemini import generate_answer
 
@@ -50,6 +51,49 @@ async def chat(
     # --------------------------------------------------
 
     context, sources = retrieve_context(query)
+
+    # --------------------------------------------------
+    # Retrieve user's campaigns
+    # --------------------------------------------------
+
+    campaign_result = await db.execute(
+        select(Campaign)
+        .where(Campaign.created_by == user_id)
+        .order_by(Campaign.created_at.desc())
+    )
+
+    campaigns = campaign_result.scalars().all()
+
+    # --------------------------------------------------
+    # Add campaign information to AI context
+    # --------------------------------------------------
+
+    if campaigns:
+        campaign_context = """
+    
+CURRENT USER CAMPAIGNS
+The following campaigns belong to the current user.
+Use this information when the user asks about campaigns,
+the latest campaign, recent campaigns, campaign status,
+scheduled campaigns, or campaign content.
+
+The campaigns are ordered from newest to oldest by creation date.
+
+"""
+
+        for campaign in campaigns:
+            campaign_context += (
+                f"Campaign Title: {campaign.title}\n"
+                f"Campaign Type: {campaign.type.value}\n"
+                f"Campaign Status: {campaign.status.value}\n"
+                f"Created At: {campaign.created_at}\n"
+                f"Scheduled At: {campaign.scheduled_at}\n"
+                f"Content: {campaign.content or 'No content'}\n"
+                "---\n"
+            )
+
+        context += campaign_context
+        sources.append("User campaigns")
 
     # --------------------------------------------------
     # Generate answer

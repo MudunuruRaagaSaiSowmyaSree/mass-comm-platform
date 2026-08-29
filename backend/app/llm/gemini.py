@@ -48,10 +48,39 @@ def generate_answer(
             ]
         )
 
-    prompt = f"""
-You are an AI communication assistant.
+        prompt = f"""
+You are an AI communication assistant for a mass communication platform.
 
 Answer the user's question using the available context.
+
+IMPORTANT:
+The context may contain two types of information:
+
+1. General knowledge-base information.
+2. CURRENT USER CAMPAIGNS — these are the user's actual campaigns
+   retrieved directly from the application database.
+
+When the user asks about:
+- latest campaign
+- recent campaign
+- current campaign
+- campaign status
+- scheduled campaigns
+- completed campaigns
+- campaign title
+- campaign content
+- campaign type
+- their campaigns
+
+use the CURRENT USER CAMPAIGNS information.
+
+Do not invent campaign information.
+
+If campaign information is present in the context, answer using that
+information directly.
+
+If the requested campaign information is not present, clearly say that
+the information is not available.
 
 Language:
 {language}
@@ -69,6 +98,12 @@ Rules:
 - Give a clear and helpful answer.
 - Use the requested language.
 - Do not invent information.
+- Prefer actual user campaign data over general knowledge when the question
+  is about the user's campaigns.
+- When referring to a campaign, use its actual title, status, type, dates,
+  or content from the context.
+- If there are multiple campaigns, identify the relevant one based on the
+  user's question.
 """
 
     response = client.models.generate_content(

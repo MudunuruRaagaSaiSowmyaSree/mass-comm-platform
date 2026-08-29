@@ -1,78 +1,86 @@
-import os
-import httpx
+from datetime import datetime
 
 
-WEATHER_API_KEY = os.getenv("WEATHER_API_KEY", "")
+# ============================================================
+# DUMMY WEATHER DATA
+# ============================================================
 
-WEATHER_API_URL = (
-    "https://api.openweathermap.org/data/2.5/weather"
-)
+DUMMY_WEATHER_DATA = {
+    "hyderabad": {
+        "city": "Hyderabad",
+        "temperature": 28,
+        "humidity": 65,
+        "weather": "partly cloudy",
+        "wind_speed": 12,
+    },
 
+    "vijayawada": {
+        "city": "Vijayawada",
+        "temperature": 30,
+        "humidity": 70,
+        "weather": "sunny",
+        "wind_speed": 10,
+    },
+
+    "visakhapatnam": {
+        "city": "Visakhapatnam",
+        "temperature": 29,
+        "humidity": 75,
+        "weather": "cloudy",
+        "wind_speed": 14,
+    },
+
+    "tirupati": {
+        "city": "Tirupati",
+        "temperature": 27,
+        "humidity": 68,
+        "weather": "partly cloudy",
+        "wind_speed": 9,
+    },
+
+    "warangal": {
+        "city": "Warangal",
+        "temperature": 29,
+        "humidity": 62,
+        "weather": "sunny",
+        "wind_speed": 11,
+    },
+}
+
+
+# ============================================================
+# GET CURRENT WEATHER
+# ============================================================
 
 async def get_current_weather(city: str):
 
-    if not WEATHER_API_KEY:
+    city = city.strip().lower()
+
+    if not city:
         return {
             "success": False,
-            "error": "WEATHER_API_KEY is not configured."
+            "error": "City is required.",
         }
 
-    params = {
-        "q": city,
-        "appid": WEATHER_API_KEY,
-        "units": "metric",
-    }
+    weather = DUMMY_WEATHER_DATA.get(city)
 
-    try:
-        async with httpx.AsyncClient(timeout=10) as client:
-
-            response = await client.get(
-                WEATHER_API_URL,
-                params=params,
-            )
-
-            response.raise_for_status()
-
-            data = response.json()
-
-        return {
-            "success": True,
-            "city": data.get("name"),
-
-            "temperature": data.get(
-                "main",
-                {}
-            ).get("temp"),
-
-            "humidity": data.get(
-                "main",
-                {}
-            ).get("humidity"),
-
-            "weather": (
-                data.get("weather", [{}])[0]
-                .get("description")
-            ),
-
-            "wind_speed": data.get(
-                "wind",
-                {}
-            ).get("speed"),
-        }
-
-    except httpx.HTTPStatusError as error:
-
+    if not weather:
         return {
             "success": False,
             "error": (
-                f"Weather API returned "
-                f"status {error.response.status_code}"
-            )
+                f"No dummy weather data available for "
+                f"'{city}'. Available cities: "
+                f"{', '.join(DUMMY_WEATHER_DATA.keys())}"
+            ),
         }
 
-    except Exception as error:
-
-        return {
-            "success": False,
-            "error": str(error)
-        }
+    return {
+        "success": True,
+        "city": weather["city"],
+        "temperature": weather["temperature"],
+        "humidity": weather["humidity"],
+        "weather": weather["weather"],
+        "wind_speed": weather["wind_speed"],
+        "source": "dummy_data",
+        "date": datetime.now().strftime("%Y-%m-%d"),
+    }

@@ -1,3 +1,5 @@
+from uuid import UUID
+
 from sqlalchemy import select
 
 from app.database import AsyncSessionLocal
@@ -38,7 +40,8 @@ class SessionManager:
         session_id: str,
         user_text: str,
         bot_text: str,
-        detected_lang: str
+        detected_lang: str,
+        user_id: UUID,
     ):
 
         async with AsyncSessionLocal() as db:
@@ -48,7 +51,7 @@ class SessionManager:
                 message=user_text,
                 response=bot_text,
                 language=detected_lang,
-                user_id=None,
+                user_id=user_id,
             )
 
             db.add(chat)
